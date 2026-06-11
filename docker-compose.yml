@@ -1,0 +1,51 @@
+services:
+  postgres:
+    container_name: rag-agent-postgres
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-ragagent}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ragagent_secret}
+      POSTGRES_DB: ${POSTGRES_DB:-ragagent}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ragagent} -d ${POSTGRES_DB:-ragagent}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  rag-agent:
+    container_name: rag-agent
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-ragagent}:${POSTGRES_PASSWORD:-ragagent_secret}@postgres:5432/${POSTGRES_DB:-ragagent}
+    volumes:
+      - ./data:/app/data
+      - ./evals/out:/app/evals/out
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  postgres_data:
