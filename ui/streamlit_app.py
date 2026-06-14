@@ -347,20 +347,27 @@ def fetch_health_model_info(health_api_url: str) -> dict:
         timeout=HEALTH_API_TIMEOUT_SECONDS,
     )
     response.raise_for_status()
-    return response.json()
+    payload = response.json()
+    return {
+        "features": payload.get("features", []),
+        "numeric_features": payload.get("numeric_features", []),
+        "categorical_features": payload.get("categorical_features", []),
+        "metrics": payload.get("metrics", {}),
+        "classes": payload.get("classes", []),
+    }
 
 
-def predict_device_health(health_api_url: str, features: dict) -> dict:
+def call_health_predict(features: dict, health_api_url: str) -> dict:
     response = requests.post(
         f"{health_api_url}/predict",
-        json=features,
+        json={"features": features},
         timeout=HEALTH_API_TIMEOUT_SECONDS,
     )
     response.raise_for_status()
     return response.json()
 
 
-def _extract_feature_names(features: list) -> list[str]:
+def _normalize_feature_list(features: list) -> list[str]:
     if not features:
         return []
     if isinstance(features[0], str):
@@ -372,7 +379,7 @@ def _extract_feature_names(features: list) -> list[str]:
             if name:
                 names.append(name)
         return names
-    return []
+    return [str(item) for item in features if item is not None]
 
 
 def _load_health_model_info(health_api_url: str, force: bool = False) -> dict | None:
@@ -405,41 +412,69 @@ def _render_health_prediction_tab() -> None:
         )
     )
 
-    load_clicked = st.button("加载模型信息", key="load_health_model_info")
+    load_clicked = st.button("获取模型信息", key="load_health_model_info")
 
     model_info = None
     if load_clicked:
-        with st.spinner("正在获取模型特征..."):
+        with st.spinner("正在获取模型信息..."):
             model_info = _load_health_model_info(health_api_url, force=True)
+            if model_info is not None:
+                st.session_state.pop("health_prediction_result", None)
     elif st.session_state.get("health_model_info_url") == health_api_url:
         model_info = st.session_state.get("health_model_info")
 
     if not model_info:
-        st.info("请先点击「加载模型信息」，从工业预测 API 获取模型所需 features。")
+        st.info("请先点击「获取模型信息」，从工业预测 API 加载模型 schema。")
         return
 
-    feature_names = _extract_feature_names(model_info.get("features", []))
-    if not feature_names:
-        st.warning("模型未返回有效的 features，无法生成输入框。")
+    numeric_features = _normalize_feature_list(model_info.get("numeric_features", []))
+    categorical_features = _normalize_feature_list(model_info.get("categorical_features", []))
+    fallback_features = _normalize_feature_list(model_info.get("features", []))
+
+    if not numeric_features and not categorical_features:
+        numeric_features = fallback_features
+
+    if not numeric_features and not categorical_features:
+        st.warning("模型未返回有效的特征字段，无法生成输入框。")
         st.json(model_info)
         return
 
-    st.caption(f"模型所需特征（共 {len(feature_names)} 项）")
+    classes = model_info.get("classes") or []
+    metrics = model_info.get("metrics") or {}
+    if classes:
+        st.caption(f"类别 classes: {', '.join(str(c) for c in classes)}")
+    if metrics:
+        with st.expander("模型指标 metrics", expanded=False):
+            st.json(metrics)
 
-    feature_values: dict[str, float] = {}
+    st.caption(
+        f"数值特征 {len(numeric_features)} 项 · 类别特征 {len(categorical_features)} 项"
+    )
+
+    feature_values: dict = {}
     input_cols = st.columns(2)
-    for index, feature_name in enumerate(feature_names):
+
+    for index, feature_name in enumerate(numeric_features):
         with input_cols[index % 2]:
             feature_values[feature_name] = st.number_input(
                 feature_name,
                 value=0.0,
-                key=f"health_feature_{feature_name}",
+                key=f"health_numeric_{feature_name}",
+            )
+
+    col_offset = len(numeric_features)
+    for index, feature_name in enumerate(categorical_features):
+        with input_cols[(col_offset + index) % 2]:
+            feature_values[feature_name] = st.text_input(
+                feature_name,
+                value="",
+                key=f"health_categorical_{feature_name}",
             )
 
     if st.button("预测设备健康状态", type="primary", key="predict_device_health"):
         with st.spinner("正在预测设备健康状态..."):
             try:
-                result = predict_device_health(health_api_url, feature_values)
+                result = call_health_predict(feature_values, health_api_url)
                 st.session_state.health_prediction_result = result
             except requests.RequestException as exc:
                 st.error(_format_health_error(exc, "健康预测"))
