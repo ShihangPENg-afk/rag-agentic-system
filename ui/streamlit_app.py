@@ -7,10 +7,12 @@ from dotenv import load_dotenv
 load_dotenv()
 
 DEFAULT_API_BASE_URL = "http://127.0.0.1:8000"
+DEFAULT_HEALTH_API_URL = "http://127.0.0.1:8010"
 UPLOAD_TIMEOUT_SECONDS = 300
 ASK_TIMEOUT_SECONDS = 300
 BACKEND_CHECK_TIMEOUT_SECONDS = 5
 LIST_TIMEOUT_SECONDS = 30
+HEALTH_API_TIMEOUT_SECONDS = 30
 
 
 st.set_page_config(
@@ -320,6 +322,165 @@ def _render_agent_debug_trace(debug: dict | None) -> None:
     message_count = debug.get("message_count")
     if message_count is not None:
         st.caption(f"message_count: {message_count}")
+
+
+def _format_health_error(exc: requests.RequestException, action: str) -> str:
+    if isinstance(exc, requests.Timeout):
+        return f"{action}请求超时，请稍后重试。"
+    if isinstance(exc, requests.ConnectionError):
+        return f"无法连接工业预测 API，请确认 HEALTH_API_URL 正确且服务已启动。"
+    if isinstance(exc, requests.HTTPError):
+        response = exc.response
+        if response is not None:
+            try:
+                detail = response.json().get("detail", response.text)
+            except ValueError:
+                detail = response.text
+            return f"{action}失败（HTTP {response.status_code}）：{detail}"
+        return f"{action}失败：{exc}"
+    return f"{action}时发生网络错误：{exc}"
+
+
+def fetch_health_model_info(health_api_url: str) -> dict:
+    response = requests.get(
+        f"{health_api_url}/model-info",
+        timeout=HEALTH_API_TIMEOUT_SECONDS,
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+def predict_device_health(health_api_url: str, features: dict) -> dict:
+    response = requests.post(
+        f"{health_api_url}/predict",
+        json=features,
+        timeout=HEALTH_API_TIMEOUT_SECONDS,
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+def _extract_feature_names(features: list) -> list[str]:
+    if not features:
+        return []
+    if isinstance(features[0], str):
+        return [name for name in features if name]
+    if isinstance(features[0], dict):
+        names: list[str] = []
+        for item in features:
+            name = item.get("name") or item.get("feature")
+            if name:
+                names.append(name)
+        return names
+    return []
+
+
+def _load_health_model_info(health_api_url: str, force: bool = False) -> dict | None:
+    if (
+        not force
+        and st.session_state.get("health_model_info_url") == health_api_url
+        and st.session_state.get("health_model_info")
+    ):
+        return st.session_state.health_model_info
+
+    try:
+        model_info = fetch_health_model_info(health_api_url)
+        st.session_state.health_model_info = model_info
+        st.session_state.health_model_info_url = health_api_url
+        return model_info
+    except requests.RequestException as exc:
+        st.error(_format_health_error(exc, "获取模型信息"))
+        return None
+
+
+def _render_health_prediction_tab() -> None:
+    st.subheader("设备健康预测")
+
+    health_api_url = _normalize_base_url(
+        st.text_input(
+            "HEALTH_API_URL",
+            value=os.getenv("HEALTH_API_URL", DEFAULT_HEALTH_API_URL),
+            help="工业预测 API 地址，可通过环境变量 HEALTH_API_URL 覆盖默认值。",
+            key="health_api_url_input",
+        )
+    )
+
+    load_clicked = st.button("加载模型信息", key="load_health_model_info")
+
+    model_info = None
+    if load_clicked:
+        with st.spinner("正在获取模型特征..."):
+            model_info = _load_health_model_info(health_api_url, force=True)
+    elif st.session_state.get("health_model_info_url") == health_api_url:
+        model_info = st.session_state.get("health_model_info")
+
+    if not model_info:
+        st.info("请先点击「加载模型信息」，从工业预测 API 获取模型所需 features。")
+        return
+
+    feature_names = _extract_feature_names(model_info.get("features", []))
+    if not feature_names:
+        st.warning("模型未返回有效的 features，无法生成输入框。")
+        st.json(model_info)
+        return
+
+    st.caption(f"模型所需特征（共 {len(feature_names)} 项）")
+
+    feature_values: dict[str, float] = {}
+    input_cols = st.columns(2)
+    for index, feature_name in enumerate(feature_names):
+        with input_cols[index % 2]:
+            feature_values[feature_name] = st.number_input(
+                feature_name,
+                value=0.0,
+                key=f"health_feature_{feature_name}",
+            )
+
+    if st.button("预测设备健康状态", type="primary", key="predict_device_health"):
+        with st.spinner("正在预测设备健康状态..."):
+            try:
+                result = predict_device_health(health_api_url, feature_values)
+                st.session_state.health_prediction_result = result
+            except requests.RequestException as exc:
+                st.error(_format_health_error(exc, "健康预测"))
+                return
+
+    result = st.session_state.get("health_prediction_result")
+    if not result:
+        return
+
+    st.divider()
+    st.subheader("预测结果")
+
+    prediction = result.get("prediction")
+    risk_level = result.get("risk_level")
+    recommendation = result.get("recommendation")
+    probabilities = result.get("probabilities")
+
+    metric_cols = st.columns(2)
+    with metric_cols[0]:
+        st.metric("prediction", str(prediction) if prediction is not None else "—")
+    with metric_cols[1]:
+        st.metric("risk_level", str(risk_level) if risk_level is not None else "—")
+
+    st.markdown("**recommendation**")
+    if recommendation:
+        st.info(recommendation)
+    else:
+        st.caption("（无）")
+
+    st.markdown("**probabilities**")
+    if isinstance(probabilities, dict) and probabilities:
+        for label, prob in probabilities.items():
+            if isinstance(prob, (int, float)):
+                st.markdown(f"`{label}`: {prob:.2%}")
+                st.progress(min(max(float(prob), 0.0), 1.0))
+            else:
+                st.markdown(f"`{label}`: {prob}")
+    elif probabilities is not None:
+        st.json(probabilities)
+    else:
+        st.caption("（无）")
 
 
 def _format_request_error(exc: requests.RequestException) -> str:
@@ -715,7 +876,9 @@ with st.sidebar:
                 except requests.RequestException as exc:
                     st.error(_format_request_error(exc))
 
-tab_chat, tab_history, tab_debug = st.tabs(["聊天", "历史记录", "调试说明"])
+tab_chat, tab_history, tab_debug, tab_health = st.tabs(
+    ["聊天", "历史记录", "调试说明", "设备健康预测"]
+)
 
 with tab_chat:
     _render_chat_tab(api_base_url, active_kb_ids if reachable else set())
@@ -725,3 +888,6 @@ with tab_history:
 
 with tab_debug:
     _render_debug_help_tab()
+
+with tab_health:
+    _render_health_prediction_tab()
