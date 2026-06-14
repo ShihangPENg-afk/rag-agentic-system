@@ -11,6 +11,9 @@ PDF           ?= test.pdf
 BASE_URL      ?= http://127.0.0.1:8000
 SMOKE_SCRIPT  := scripts/smoke_test.sh
 
+INDUSTRIAL_HEALTH_DEMO_DIR ?= ../industrial-health-demo
+HEALTH_API_URL            ?= http://127.0.0.1:8010
+
 RAGAS_LIMIT   ?= 3
 RAGAS_TIMEOUT ?= 600
 RAGAS_METRICS ?= relevancy
@@ -22,6 +25,7 @@ RAGAS_SAMPLES := evals/ragas_samples.json
 .PHONY: help install env-init env-check \
         run \
         docker-up docker-down docker-logs \
+        health-up stack-up stack-verify ui \
         test-agent test-retrieval test-doc-tools smoke \
         eval-ragas
 
@@ -71,6 +75,19 @@ docker-down: ## 停止并移除 Docker 容器
 
 docker-logs: ## 跟踪 Docker 服务日志
 	$(COMPOSE) logs -f $(SERVICE)
+
+health-up: ## 启动 industrial-health-demo Docker 服务 (:8010)
+	@test -d "$(INDUSTRIAL_HEALTH_DEMO_DIR)" || (echo "❌ 未找到 $(INDUSTRIAL_HEALTH_DEMO_DIR)，请设置 INDUSTRIAL_HEALTH_DEMO_DIR"; exit 1)
+	$(MAKE) -C "$(INDUSTRIAL_HEALTH_DEMO_DIR)" docker-up
+
+stack-up: env-check ## 启动 rag-agent + industrial-health-demo 双服务栈
+	bash scripts/start_stack.sh
+
+stack-verify: ## 验证 rag-agent (:8000) 与 industrial-health-demo (:8010)
+	bash scripts/verify_health_stack.sh $(BASE_URL) $(HEALTH_API_URL)
+
+ui: ## 启动 Streamlit UI（需后端已运行）
+	streamlit run ui/streamlit_app.py
 
 # ---------------------------------------------------------------------------
 # 测试

@@ -13,6 +13,7 @@ ASK_TIMEOUT_SECONDS = 300
 BACKEND_CHECK_TIMEOUT_SECONDS = 5
 LIST_TIMEOUT_SECONDS = 30
 HEALTH_API_TIMEOUT_SECONDS = 30
+SIDEBAR_KB_SELECT_KEY = "sidebar_available_kb_select"
 
 
 st.set_page_config(
@@ -35,6 +36,7 @@ def _init_session_state() -> None:
         "backend_check_error": None,
         "history": [],
         "last_upload_response": None,
+        "last_batch_upload_response": None,
         "selected_kb_from_list": None,
     }
     for key, value in defaults.items():
@@ -136,6 +138,70 @@ def upload_pdf(api_base_url: str, uploaded_file) -> dict:
     )
     response.raise_for_status()
     return response.json()
+
+
+def upload_pdfs(api_base_url: str, uploaded_files: list) -> dict:
+    multipart_files = [
+        ("files", (uploaded_file.name, uploaded_file.getvalue(), "application/pdf"))
+        for uploaded_file in uploaded_files
+    ]
+    response = requests.post(
+        f"{api_base_url}/upload_pdfs/",
+        files=multipart_files,
+        timeout=UPLOAD_TIMEOUT_SECONDS * max(len(uploaded_files), 1),
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+def _normalize_uploaded_files(uploaded) -> list:
+    if uploaded is None:
+        return []
+    if isinstance(uploaded, list):
+        return uploaded
+    return [uploaded]
+
+
+def _find_kb_select_index(available_docs: list[dict], kb_id: str | None) -> int:
+    if not kb_id:
+        return 0
+    for index, doc in enumerate(available_docs, start=1):
+        if doc["knowledge_base_id"] == kb_id:
+            return index
+    return 0
+
+
+def _sync_sidebar_kb_select(available_docs: list[dict], kb_id: str | None) -> None:
+    target_index = _find_kb_select_index(available_docs, kb_id)
+    if target_index > 0:
+        st.session_state[SIDEBAR_KB_SELECT_KEY] = target_index
+
+
+def _apply_single_upload_result(result: dict) -> None:
+    st.session_state.last_upload_response = result
+    st.session_state.last_batch_upload_response = None
+    st.session_state.knowledge_base_id = result.get("knowledge_base_id")
+    st.session_state.upload_filename = result.get("filename")
+    st.session_state.chunks_count = result.get("chunks_count")
+    st.session_state.upload_status = result.get("status")
+    st.session_state.upload_message = result.get("message")
+    st.session_state.history = []
+    st.session_state.pop("sidebar_documents", None)
+    st.session_state.pop("active_kb_ids", None)
+    st.session_state.pop("qa_logs_cache", None)
+    st.session_state.pop("qa_logs_cache_key", None)
+    st.session_state.pop(SIDEBAR_KB_SELECT_KEY, None)
+
+
+def _apply_batch_upload_result(result: dict) -> None:
+    st.session_state.last_batch_upload_response = result
+    st.session_state.last_upload_response = None
+    _clear_knowledge_base_session()
+    st.session_state.pop("sidebar_documents", None)
+    st.session_state.pop("active_kb_ids", None)
+    st.session_state.pop("qa_logs_cache", None)
+    st.session_state.pop("qa_logs_cache_key", None)
+    st.session_state.pop(SIDEBAR_KB_SELECT_KEY, None)
 
 
 def _history_for_request(history: list) -> list[dict]:
@@ -620,24 +686,21 @@ def _render_sidebar_documents(api_base_url: str, reachable: bool) -> set[str]:
                 f"{doc['created_at'][:19]}"
             )
 
-        default_index = 0
         if _is_kb_active(current_kb, active_kb_ids):
-            for index, doc in enumerate(available_docs, start=1):
-                if doc["knowledge_base_id"] == current_kb:
-                    default_index = index
-                    break
+            _sync_sidebar_kb_select(available_docs, current_kb)
+        elif SIDEBAR_KB_SELECT_KEY not in st.session_state:
+            st.session_state[SIDEBAR_KB_SELECT_KEY] = 0
 
         selected_index = st.selectbox(
             "可用知识库",
             option_indices,
             format_func=_format_available_option,
-            index=default_index,
-            key="sidebar_available_kb_select",
+            key=SIDEBAR_KB_SELECT_KEY,
         )
 
         if selected_index == 0:
             if _is_kb_active(st.session_state.knowledge_base_id, active_kb_ids):
-                _clear_knowledge_base_session()
+                _sync_sidebar_kb_select(available_docs, st.session_state.knowledge_base_id)
                 st.rerun()
         else:
             selected_doc = available_docs[selected_index - 1]
@@ -835,9 +898,18 @@ def _render_debug_help_tab() -> None:
                 "GET  /qa_logs/?knowledge_base_id=...      # 历史问答",
                 "POST /upload_pdf/                         # 上传 PDF",
                 "POST /ask/                                # Agent 问答（debug=true）",
+                "GET  /health (industrial-health-demo)     # 设备健康预测服务",
+                "POST /predict (industrial-health-demo)    # 传感器参数预测",
             ]
         ),
         language="text",
+    )
+
+    st.markdown(
+        """
+        **设备健康预测**（独立 Tab）通过 `HEALTH_API_URL`（默认 `http://127.0.0.1:8010`）
+        调用 industrial-health-demo 的 `/model-info` 与 `/predict`，与 PDF 问答链路互不干扰。
+        """
     )
 
     st.divider()
@@ -880,33 +952,46 @@ with st.sidebar:
 
     st.divider()
     st.subheader("知识库构建")
-    uploaded_file = st.file_uploader("上传 PDF 文件", type=["pdf"])
+    uploaded_input = st.file_uploader(
+        "上传 PDF 文件",
+        type=["pdf"],
+        accept_multiple_files=True,
+        help="选择 1 个 PDF 将自动设为当前知识库；选择多个 PDF 批量构建后请手动选择要问答的文档。",
+    )
+    uploaded_files = _normalize_uploaded_files(uploaded_input)
 
     build_clicked = st.button(
         "构建 / 更新向量库",
         type="primary",
-        disabled=uploaded_file is None or not reachable,
+        disabled=not uploaded_files or not reachable,
     )
 
     if build_clicked:
-        if uploaded_file is None:
+        if not uploaded_files:
             st.warning("请先选择 PDF 文件。")
-        else:
+        elif len(uploaded_files) == 1:
             with st.spinner("正在上传并构建向量库，请稍候..."):
                 try:
-                    result = upload_pdf(api_base_url, uploaded_file)
-                    st.session_state.last_upload_response = result
-                    st.session_state.knowledge_base_id = result.get("knowledge_base_id")
-                    st.session_state.upload_filename = result.get("filename")
-                    st.session_state.chunks_count = result.get("chunks_count")
-                    st.session_state.upload_status = result.get("status")
-                    st.session_state.upload_message = result.get("message")
-                    st.session_state.history = []
-                    st.session_state.pop("sidebar_documents", None)
-                    st.session_state.pop("active_kb_ids", None)
-                    st.session_state.pop("qa_logs_cache", None)
-                    st.session_state.pop("qa_logs_cache_key", None)
-                    st.success("向量库构建成功")
+                    result = upload_pdf(api_base_url, uploaded_files[0])
+                    _apply_single_upload_result(result)
+                    st.success("向量库构建成功，已自动设为当前知识库，可直接开始问答。")
+                    st.rerun()
+                except requests.RequestException as exc:
+                    st.error(_format_request_error(exc))
+        else:
+            with st.spinner(f"正在批量上传 {len(uploaded_files)} 个 PDF，请稍候..."):
+                try:
+                    result = upload_pdfs(api_base_url, uploaded_files)
+                    _apply_batch_upload_result(result)
+                    uploaded_count = result.get("total_uploaded", 0)
+                    failed_count = result.get("total_failed", 0)
+                    if uploaded_count > 0:
+                        st.success(
+                            f"批量构建完成：成功 {uploaded_count} 个，失败 {failed_count} 个。"
+                            "请从上方「可用知识库」中选择要问答的文档。"
+                        )
+                    else:
+                        st.error(f"批量构建失败：{failed_count} 个文件均未成功。")
                     st.rerun()
                 except requests.RequestException as exc:
                     st.error(_format_request_error(exc))

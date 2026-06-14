@@ -69,6 +69,21 @@ if [ "${DOCS_OK}" -ne 1 ]; then
   step_fail "无法访问 ${BASE_URL}/openapi.json 或 ${BASE_URL}/docs，请确认服务已启动"
 fi
 
+if [ -f /tmp/rag_openapi.json ]; then
+  if ! "${PYTHON_BIN}" -c '
+import json
+with open("/tmp/rag_openapi.json") as f:
+    data = json.load(f)
+title = data.get("info", {}).get("title", "")
+if title != "RAG PDF 智能问答系统":
+    print(title)
+    raise SystemExit(1)
+' 2>/tmp/rag_smoke_title.err; then
+    WRONG_TITLE="$(cat /tmp/rag_smoke_title.err 2>/dev/null || echo '未知服务')"
+    step_fail "BASE_URL 指向了错误的服务（${WRONG_TITLE}）。请停止占用 8000 端口的其他进程，仅保留 rag-agent Docker 容器，或使用 make stack-up 启动双服务栈。"
+  fi
+fi
+
 # ---------------------------------------------------------------------------
 # 2. 上传 PDF
 # ---------------------------------------------------------------------------

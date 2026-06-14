@@ -32,7 +32,7 @@
 | **多步推理** | `planner` 拆解子问题，`evaluator` 汇总证据并决定是否继续检索 |
 | **对话 Memory** | 请求体传入 `history`，保留最近 3 轮；Agent 将历史摘要注入 system message，检索工具也可利用历史做指代消解 |
 | **Debug trace** | `/ask/` 设置 `debug: true`，返回 `tool_trace`、`reasoning_snapshot`、`retrieved_evidence_preview` |
-| **Streamlit UI** | 浏览器端上传 PDF、多轮问答、Debug Trace 可视化、历史问答查看 |
+| **Streamlit UI** | 浏览器端上传 PDF、多轮问答、Debug Trace 可视化、历史问答查看、**设备健康预测**（联动 industrial-health-demo） |
 | **PostgreSQL 混合持久化** | 文档元信息与 QA 日志落库；**向量检索仍用进程内 FAISS** |
 | **Docker 部署** | `Dockerfile` + `docker-compose.yml`（含 PostgreSQL），含 healthcheck |
 | **RAGAS 评估** | 离线脚本对 Agent 回答打分，输出 JSON / Markdown 报告 |
@@ -167,7 +167,58 @@ export API_BASE_URL=http://127.0.0.1:8000
 streamlit run ui/streamlit_app.py
 ```
 
-UI 主要能力：PDF 上传与向量库构建、多轮 Agent 问答、Debug Trace 可视化、「历史记录」页查看 PostgreSQL 中的 QA 日志。录屏演示步骤见 [docs/ui_demo_guide.md](docs/ui_demo_guide.md)。
+UI 主要能力：PDF 上传与向量库构建、多轮 Agent 问答、Debug Trace 可视化、「历史记录」页查看 PostgreSQL 中的 QA 日志、**「设备健康预测」** Tab 调用工业健康 API。录屏演示步骤见 [docs/ui_demo_guide.md](docs/ui_demo_guide.md)。
+
+### 4.1 双服务联动（rag-agent + industrial-health-demo）
+
+两个仓库通过 **HTTP 松耦合**：rag-agent 占 **8000**，industrial-health-demo 占 **8010**，互不共用进程或数据库。
+
+| 服务 | 端口 | 职责 |
+|------|------|------|
+| **rag-agent** | `8000` | PDF 上传、Agent 问答、PostgreSQL 元数据 |
+| **industrial-health-demo** | `8010` | 传感器特征 → 设备健康分类（`/health`、`/model-info`、`/predict`） |
+
+**一键启动双服务栈**（需同级目录存在 `../industrial-health-demo`）：
+
+```bash
+# rag-agent 仓库内
+make stack-up          # 先起 industrial-health-demo Docker，再起 rag-agent Docker
+make stack-verify      # 验证 8000 + 8010 均正常
+```
+
+或分步启动：
+
+```bash
+# 终端 A — industrial-health-demo
+cd ../industrial-health-demo
+make docker-up         # 首次会自动训练 model.pkl（若缺失）
+make docker-verify     # curl /health /model-info + 样例 /predict
+
+# 终端 B — rag-agent
+cd ../rag-agent
+make env-check && make docker-up
+make stack-verify
+```
+
+**启动 Streamlit UI**（终端 C）：
+
+```bash
+cd rag-agent
+source .venv/bin/activate
+pip install -r ui/requirements-ui.txt
+export API_BASE_URL=http://127.0.0.1:8000
+export HEALTH_API_URL=http://127.0.0.1:8010
+make ui
+# 或: streamlit run ui/streamlit_app.py
+```
+
+在 UI 中：
+
+- **侧边栏** `API_BASE_URL` → rag-agent（PDF / 聊天 / Debug Trace）
+- **「设备健康预测」Tab** `HEALTH_API_URL` → industrial-health-demo（默认 `http://127.0.0.1:8010`）
+- 点击「获取模型信息」加载特征字段 → 输入传感器参数 →「预测设备健康状态」
+
+> **端口冲突注意**：不要在宿主机用 `uvicorn ... --port 8000` 启动 industrial-health-demo；该服务应仅监听 **8010**（Docker 已配置）。若 `make smoke` 报「指向了错误的服务」，说明 8000 被其他进程占用，停止后仅保留 rag-agent 容器即可。
 
 ### 5. Docker 启动
 
