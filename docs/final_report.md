@@ -136,7 +136,7 @@ history 指代增强 → FAISS 检索 → Prompt 组装 → DashScope 生成
 
 ## 4. Docker 验收结果
 
-### 4.1 交付物
+### 4.1 Docker 配置清单
 
 | 文件 | 说明 |
 |------|------|

@@ -272,6 +272,8 @@ make ui
 
 > **端口冲突注意**：不要在宿主机用 `uvicorn ... --port 8000` 启动 industrial-health-demo；该服务应仅监听 **8010**（Docker 已配置）。若 `make smoke` 报「指向了错误的服务」，说明 8000 被其他进程占用，停止后仅保留 rag-agent 容器即可。
 
+> **Docker 内调用工业 API**：`docker-compose.yml` 中 `HEALTH_API_URL` 默认为 `http://host.docker.internal:8010`（适用于 Docker Desktop / macOS）。在 **Linux** 上若 Agent 容器无法访问宿主机 `:8010`，需在 compose 中增加 `extra_hosts: ["host.docker.internal:host-gateway"]`，或改为宿主机局域网 IP。
+
 ### 5. Docker 启动
 
 ```bash
@@ -504,6 +506,8 @@ make docker-up && make docker-verify   # 无 make run；Docker 映射 :8010
 - **faithfulness 评估较慢**：RAGAS `Faithfulness` 需额外 LLM 判分，多样本并发时易超时；脚本在 `metrics=faithfulness` 时会自动切换逐条串行模式。
 - **文档结构工具为启发式**：`list_headings`、`count_tables` 基于切块文本规则，不解析 PDF 原生目录或表格对象。
 - **Memory 为请求级**：多轮对话由客户端在 `history` 字段中传递；跨会话长期记忆依赖 QA 日志查询，非自动注入上下文。
+- **经典 RAG 不写 QA 日志**：`POST /ask_rag/` 不写入 PostgreSQL `qa_logs`；仅 `POST /ask/`（Agent 模式）持久化问答历史。
+- **无生产鉴权、未云部署**：HTTP 接口面向本地 POC 演示，不具备生产级访问控制与云端部署。
 
 ---
 
@@ -546,7 +550,7 @@ rag-agent/
 │   └── check_env.sh             # 环境变量检查
 └── docs/
     ├── architecture.md          # 详细架构说明
-    ├── delivery_checklist.md    # 交付验收清单
+    ├── delivery_checklist.md    # 功能验收清单
     ├── industrial_demo_guide.md # 工业预测联动演示
     └── ui_demo_guide.md         # UI 录屏演示步骤
 ```

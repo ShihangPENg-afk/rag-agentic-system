@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# 最终交付检查：API 文档、PostgreSQL 元数据接口、端到端 Smoke Test
+# 端到端演示验收：API 文档、PostgreSQL 元数据接口、Smoke Test
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 cd "${PROJECT_ROOT}"
@@ -38,13 +38,13 @@ step_fail() {
   echo "❌ $1"
   echo
   echo "============================================================"
-  echo "❌ 最终交付检查失败 (${STEP}/${TOTAL_STEPS})"
+  echo "❌ 演示验收检查失败 (${STEP}/${TOTAL_STEPS})"
   echo "============================================================"
   exit 1
 }
 
 echo "============================================================"
-echo "Final Demo Check / 最终交付检查"
+echo "Final Demo Check / 端到端演示验收"
 echo "============================================================"
 echo "BASE_URL : ${BASE_URL}"
 echo "PDF_PATH : ${PDF_PATH}"
@@ -169,5 +169,5 @@ step_ok "scripts/smoke_test.sh 全部通过"
 
 echo
 echo "============================================================"
-echo "✅ 最终交付检查全部通过 (${TOTAL_STEPS}/${TOTAL_STEPS})"
+echo "✅ 演示验收检查全部通过 (${TOTAL_STEPS}/${TOTAL_STEPS})"
 echo "============================================================"
