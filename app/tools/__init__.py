@@ -8,6 +8,7 @@ from app.tools.document_tools import (
     list_headings_tool,
     count_tables_tool,
 )
+from app.tools.machine_health_tool import check_machine_health_tool
 
 __all__ = [
     "format_retrieved_chunks",
@@ -15,4 +16,5 @@ __all__ = [
     "preview_chunks_tool",
     "list_headings_tool",
     "count_tables_tool",
+    "check_machine_health_tool",
 ]

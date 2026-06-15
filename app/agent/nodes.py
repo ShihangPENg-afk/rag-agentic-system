@@ -9,11 +9,12 @@ from langchain_openai import ChatOpenAI
 from config import API_KEY, MODEL_NAME, DASHSCOPE_BASE_URL
 from app.agent.state import AgentState
 from app.tools.document_tools import count_tables_tool, list_headings_tool
+from app.tools.machine_health_tool import check_machine_health_tool
 from app.tools.retrieval_tools import retrieve_chunks_tool
 
 
 SYSTEM_PROMPT = """
-你是一个 PDF 知识库问答 Agent。
+你是一个 PDF 知识库问答 Agent，同时可协助进行工业设备健康预测。
 
 你可以使用工具：
 1. retrieve_chunks(query)
@@ -22,16 +23,22 @@ SYSTEM_PROMPT = """
    - 用于列出文档中的章节/小节标题
 3. count_tables()
    - 用于粗略统计文档中的表格迹象数量
+4. check_machine_health(sensor_data)
+   - 用于根据传感器数据预测设备健康状态、质量风险与产线风险
 
 规则：
 1. 如果用户问“这份文档讲什么、某个概念在哪、某部分内容是什么”，优先用 retrieve_chunks
 2. 如果用户问“有哪些章节、目录结构是什么”，优先用 list_headings
 3. 如果用户问“有几个表格”，优先用 count_tables
-4. 工具返回的是证据或结构信息，不一定是最终答案
-5. 你需要根据工具结果再组织最终回答
-6. 如果问题只是简单寒暄，可以不调用工具
-7. 对于涉及文档内容的追问，优先再次调用 retrieve_chunks 验证，不要只凭上一轮总结直接续写
-8. 当存在对话历史时，你可以利用历史理解“它 / 上文 / 该部分”等指代，但回答文档问题时仍应优先用工具核实
+4. 如果用户问设备健康、传感器数据、质量预测、产线风险、故障预警、设备状态评估等问题，优先用 check_machine_health
+5. 调用 check_machine_health 时，将用户提供的传感器读数整理为 sensor_data 字典传入；若用户未给出具体数值，可先说明需要哪些传感器字段
+6. check_machine_health 返回 prediction、risk_level、recommendation、probabilities 后，不要只罗列字段；要用自然语言解释预测含义、风险等级代表什么，并给出 1～3 条简短、可执行的维护建议
+7. 解释设备健康结果时：先概括结论，再说明依据（可结合 probabilities），最后给出维护建议；语气简洁、面向一线运维人员
+8. 工具返回的是证据或结构信息，不一定是最终答案
+9. 你需要根据工具结果再组织最终回答
+10. 如果问题只是简单寒暄，可以不调用工具
+11. 对于涉及文档内容的追问，优先再次调用 retrieve_chunks 验证，不要只凭上一轮总结直接续写
+12. 当存在对话历史时，你可以利用历史理解“它 / 上文 / 该部分”等指代，但回答文档问题时仍应优先用工具核实
 """
 
 FOLLOW_MARKERS = (
@@ -65,6 +72,20 @@ CONTENT_MARKERS = (
     "如何",
     "为什么",
     "是什么",
+)
+
+HEALTH_MARKERS = (
+    "设备健康",
+    "传感器",
+    "传感器数据",
+    "质量预测",
+    "产线风险",
+    "故障",
+    "预警",
+    "设备状态",
+    "健康预测",
+    "风险等级",
+    "预测结果",
 )
 
 
@@ -120,7 +141,12 @@ def make_agent_tools(
         """粗略统计当前知识库中的表格迹象数量。"""
         return count_tables_tool(knowledge_base_id)
 
-    return [retrieve_chunks, list_headings, count_tables]
+    @tool("check_machine_health")
+    def check_machine_health(sensor_data: dict) -> str:
+        """根据传感器数据预测设备健康状态、质量风险与产线风险；返回 prediction、risk_level、recommendation、probabilities。"""
+        return check_machine_health_tool(sensor_data)
+
+    return [retrieve_chunks, list_headings, count_tables, check_machine_health]
 
 
 def get_latest_user_query(messages) -> str:
@@ -135,6 +161,16 @@ def get_previous_user_query(messages) -> str:
     if len(user_queries) >= 2:
         return user_queries[-2]
     return ""
+
+
+def is_health_question(question: str) -> bool:
+    """
+    判断当前问题是否属于设备健康 / 传感器预测类问题。
+    """
+    q = question.strip()
+    if not q:
+        return False
+    return any(marker in q for marker in HEALTH_MARKERS)
 
 
 def classify_followup_intent(messages) -> str:
@@ -273,6 +309,16 @@ def decompose_question(question: str) -> list[str]:
 def planner_node(state: AgentState) -> dict:
     question = state.get("current_question", "").strip()
 
+    if is_health_question(question):
+        return {
+            "need_multi_hop": False,
+            "sub_queries": [question],
+            "current_sub_query_index": 0,
+            "evidence_by_sub_query": {},
+            "retrieval_round": 0,
+            "decision": "",
+        }
+
     need_multi_hop = is_multi_hop_question(question)
     sub_queries = decompose_question(question) if need_multi_hop else [question]
 
@@ -371,7 +417,7 @@ def answer_node(state: AgentState) -> dict:
         evidence_lines.append("")
 
     prompt = f"""
-你是一个 PDF 知识库问答 Agent，现在需要基于多步检索得到的证据回答最终问题。
+你是一个 PDF 知识库问答 Agent，同时可协助解读工业设备健康预测结果。现在需要基于多步检索得到的证据回答最终问题。
 
 ## 原始问题
 {question}
@@ -387,6 +433,11 @@ def answer_node(state: AgentState) -> dict:
 2. 如果某个子问题证据不足，要明确说明
 3. 尽量把多个子问题综合成结构清晰的回答
 4. 不要编造文档中不存在的事实
+5. 若证据来自 check_machine_health（含 prediction、risk_level、recommendation、probabilities）：
+   - 用自然语言解释 prediction 与 risk_level 的含义，说明当前设备状态或质量风险
+   - 可结合 probabilities 简要说明各分类置信度，但不要机械罗列原始 JSON
+   - 基于 recommendation 与风险等级，给出 1～3 条简短、可执行的维护建议（如巡检、降载、校准、停机检查等）
+   - 回答结构建议：结论摘要 → 风险解读 → 维护建议
 """
 
     response = model.invoke([HumanMessage(content=prompt)])
@@ -444,7 +495,19 @@ def agent_node(state: AgentState) -> dict:
 
     followup_type = classify_followup_intent(messages)
 
-    if followup_type == "content":
+    if is_health_question(active_sub_query) or is_health_question(current_question):
+        system_messages.append(
+            SystemMessage(
+                content=(
+                    "当前问题涉及设备健康、传感器数据、质量预测或产线风险。"
+                    "请优先调用 check_machine_health，将传感器读数整理为 sensor_data 字典传入。"
+                    "若用户未提供具体传感器数值，请先说明需要哪些字段，不要改用文档检索工具。"
+                    "\n工具返回 prediction、risk_level、recommendation 后，请用自然语言向用户解释结果："
+                    "说明预测结论与风险等级含义，并给出 1～3 条简短维护建议；不要只复述工具原始字段。"
+                )
+            )
+        )
+    elif followup_type == "content":
         retrieval_hint = get_previous_user_query(messages) or current_question
         system_messages.append(
             SystemMessage(

@@ -37,3 +37,7 @@ CONTEXT_TRUNCATE_STEP = 200
 # 网络配置
 NETWORK_TIMEOUT = 5
 NETWORK_CHECK_URL = "https://dashscope.aliyun.com"
+
+# 工业设备健康预测 API
+HEALTH_API_URL = os.getenv("HEALTH_API_URL", "http://127.0.0.1:8010").strip()
+HEALTH_API_TIMEOUT = int(os.getenv("HEALTH_API_TIMEOUT", "30"))

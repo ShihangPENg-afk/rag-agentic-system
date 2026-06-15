@@ -27,6 +27,7 @@ services:
       - .env
     environment:
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-ragagent}:${POSTGRES_PASSWORD:-ragagent_secret}@postgres:5432/${POSTGRES_DB:-ragagent}
+      HEALTH_API_URL: http://host.docker.internal:8010
     volumes:
       - ./data:/app/data
       - ./evals/out:/app/evals/out
