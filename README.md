@@ -223,7 +223,6 @@ cd ../industrial-health-demo
 make docker-up         # 若缺 model.pkl 会先 train
 sleep 5                # 等待 uvicorn 加载模型后再 verify
 make docker-verify     # curl /health /model-info + 样例 /predict
-```
 
 # 终端 B — rag-agent
 cd ../rag-agent
@@ -388,7 +387,7 @@ curl -X POST "http://127.0.0.1:8000/ask/" \
 
 使用 [RAGAS](https://docs.ragas.io/) 对 Agent 问答质量进行离线评估。样本文件 `evals/ragas_samples.json` 含 **10 条手工样本**（问题 + 参考答案）；脚本先逐条调用 Agent 生成回答，再交给 RAGAS 打分。
 
-### Day 5 评估结果（`test.pdf`，2026-06-10）
+### 基线评估结果（`test.pdf`，2026-06-10，3/10 样本）
 
 运行配置：`RAGAS_LIMIT=3`、`RAGAS_METRICS=all`、`RAGAS_TIMEOUT=600`
 
@@ -405,7 +404,7 @@ curl -X POST "http://127.0.0.1:8000/ask/" \
 # 默认安全模式：3 条样本 + answer_relevancy 单指标
 make eval-ragas
 
-# Day 5 同款全量指标（faithfulness + answer_relevancy）
+# 双指标基线（faithfulness + answer_relevancy，limit=3）
 make eval-ragas RAGAS_LIMIT=3 RAGAS_METRICS=all RAGAS_TIMEOUT=600
 
 # 指定 PDF 或扩大样本数
@@ -521,7 +520,7 @@ rag-agent/
 │   ├── smoke_test.sh            # 端到端冒烟测试
 │   ├── verify_health_stack.sh   # 双服务联动检查（8000 + 8010）
 │   ├── start_stack.sh           # 一键启动双服务栈
-│   ├── final_demo_check.sh      # 最终交付检查
+│   ├── final_demo_check.sh      # 端到端演示验收脚本
 │   └── check_env.sh             # 环境变量检查
 └── docs/
     ├── architecture.md          # 详细架构说明

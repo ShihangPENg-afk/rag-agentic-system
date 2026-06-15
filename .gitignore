@@ -40,6 +40,11 @@ data/
 evals/out/
 outputs/
 screenshots/
+postgres_data/
+
+# 演示录屏（见 README 网盘链接）
+*.mp4
+*.mov
 
 # 大模型权重与检查点
 *.safetensors

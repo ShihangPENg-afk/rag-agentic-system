@@ -14,7 +14,7 @@
 | PostgreSQL 混合持久化 | 已完成（元数据 + QA 日志；向量仍为 FAISS） |
 | 容器化与验收 | 已完成 |
 | 文档与配置模板 | 已完成 |
-| 生产化 / 扩展能力 | 未完成（见第 14 节） |
+| 生产化 / 扩展能力 | 未完成（见「当前未完成项」） |
 
 ---
 
@@ -142,7 +142,7 @@ curl -X POST "http://127.0.0.1:8000/ask/" \
 - [x] `evals/run_ragas_eval.py` 评估脚本可用
 - [x] `evals/ragas_samples.json` 样本文件存在（10 条手工样本）
 - [x] `make eval-ragas` 可通过 Makefile 调用
-- [x] Day 5 基线评估已完成（`metrics=all`，`limit=3`，`eval_timeout=600`）
+- [x] 基线评估已完成（`metrics=all`，`limit=3`，`eval_timeout=600`，2026-06-10）
 - [x] 报告已生成
 
 | 指标 | 分数 |
@@ -174,7 +174,7 @@ make eval-ragas RAGAS_LIMIT=3 RAGAS_METRICS=all RAGAS_TIMEOUT=600
 - [x] 含 **Streamlit UI** 启动方法（`ui/streamlit_app.py`）
 - [x] 含 **PostgreSQL 混合持久化**说明（向量 FAISS / 元数据与日志 PG）
 - [x] 含 API 示例（`/upload_pdf/`、`/ask/`、`/ask_rag/`、`/documents/`、`/qa_logs/`）
-- [x] 含 RAGAS Day 5 结果与报告路径
+- [x] 含 RAGAS 基线结果与报告路径（3/10 样本）
 - [x] 含与 `llm-finetune-manual` 的关系说明（**未接入 LoRA**）
 - [x] 含当前限制与后续计划
 
@@ -279,7 +279,7 @@ curl -fsS http://127.0.0.1:8000/knowledge_bases
 
 ## 14. 当前未完成项
 
-以下能力**不在本期交付范围内**，或仅有规划、尚未实现：
+以下能力**不在当前版本范围内**，或仅有规划、尚未实现：
 
 ### 基础设施与持久化
 
@@ -291,14 +291,13 @@ curl -fsS http://127.0.0.1:8000/knowledge_bases
 ### 模型与评估
 
 - [ ] 接入 `llm-finetune-manual` 产出的 LoRA 微调模型
-- [ ] RAGAS 全量 10 条样本评估（当前基线仅 3 条）
+- [ ] RAGAS 10 条样本完整评估（当前基线仅 3/10 条）
 - [ ] RAGAS 自动化回归（faithfulness 大规模评估仍较慢，易超时）
 
 ### 工程化
 
 - [ ] CI/CD 流水线（自动 Smoke Test / RAGAS 对比）
-- [ ] Git 仓库初始化与提交规范（本地目录曾未初始化 Git）
-- [ ] `.gitignore` 补强（`outputs/`、`data/` 等，与 `.dockerignore` 对齐）
+- [ ] `.gitignore` 补强（与 `.dockerignore` 对齐）
 
 ### 功能增强
 
@@ -307,9 +306,26 @@ curl -fsS http://127.0.0.1:8000/knowledge_bases
 
 ---
 
+## 15. 工业预测联动（industrial-health-demo）
+
+- [x] `check_machine_health` 工具注册于 Agent（`app/tools/machine_health_tool.py`）
+- [x] HTTP 调用 `HEALTH_API_URL/predict`（默认 `:8010`），无内嵌 ML 模型
+- [x] Streamlit「设备健康预测」Tab 可直连工业 API
+- [x] `make stack-up` / `make stack-verify` 双服务验收脚本
+- [x] `docs/industrial_demo_guide.md` 演示文档
+
+**验收命令：**
+
+```bash
+make stack-verify
+# 预期：rag-agent :8000 与 industrial-health :8010 均通过
+```
+
+---
+
 ## 签收参考
 
-全部 **第 1–13 节** 勾选项满足后，可认为 rag-agent **最终交付完成**（含 Streamlit UI 与 PostgreSQL 混合持久化）。第 14 节未完成项作为后续迭代 backlog；**LoRA 微调模型本阶段未接入**，不影响当前验收结论。
+全部核心勾选项（含 PostgreSQL 混合持久化、Streamlit UI、工业预测联动）满足后，可认为 rag-agent **当前版本功能验收通过**。「当前未完成项」所列能力作为后续迭代 backlog；**LoRA 微调模型尚未接入 rag-agent**，不影响当前 POC 验收结论。
 
 **推荐最终验收顺序：**
 

@@ -1,4 +1,4 @@
-# rag-agent 项目结项报告
+# rag-agent 项目总结报告
 
 > 报告日期：2026-06-10  
 > 项目仓库：rag-agent  
@@ -19,9 +19,10 @@
 | 保留经典 RAG 链路（`/ask_rag/`）作为对照基线 | 已完成 |
 | 提供 Docker 容器化部署与 healthcheck | 已完成 |
 | 提供端到端 Smoke Test 脚本 | 已完成 |
-| 使用 RAGAS 对 Agent 回答质量进行离线评估 | 已完成（3 条样本基线） |
+| 使用 RAGAS 对 Agent 回答质量进行离线评估 | 已完成（3/10 样本基线） |
+| 集成工业设备健康预测工具（HTTP 联动） | 已完成 |
 
-**未纳入本期范围：** 知识库持久化、本地 LoRA 模型接入、生产级鉴权与 CI/CD。这些能力列入后续优化方向，见第 8 节。
+**未纳入当前版本范围：** FAISS 向量持久化、本地 LoRA 模型接入、生产级鉴权、CI/CD 与云部署。见第 8 节后续优化方向。
 
 ---
 
@@ -43,6 +44,10 @@
 ├─────────────────────────────────────────────────────────┤
 │  工具层                                                  │
 │  retrieve_chunks · list_headings · count_tables          │
+│  check_machine_health（HTTP → industrial-health-demo）    │
+├─────────────────────────────────────────────────────────┤
+│  持久化（PostgreSQL）                                    │
+│  documents · qa_logs（元数据与 QA 日志；向量不在 PG）      │
 ├─────────────────────────────────────────────────────────┤
 │  向量层（FAISS + DashScope TextEmbedding）               │
 └─────────────────────────────────────────────────────────┘
@@ -57,7 +62,7 @@
 | 向量检索 | FAISS（进程内） | 无需外部向量数据库 |
 | 大模型 | DashScope `qwen-plus` | OpenAI 兼容 API |
 | 向量化 | DashScope TextEmbedding | 固定维度 1536 |
-| 容器化 | Docker + Docker Compose | 单服务编排 |
+| 容器化 | Docker + Docker Compose | API + PostgreSQL |
 | 质量评估 | RAGAS | Faithfulness、ResponseRelevancy |
 
 ### 2.3 知识库生命周期
@@ -89,7 +94,7 @@ evaluator ──(need_more_retrieval / next_sub_query)──→ agent
 |------|------|
 | `planner` | 判断是否需要多跳，将复杂问题拆解为 `sub_queries` |
 | `agent` | 绑定工具，由 Qwen 决定是否发起 `tool_calls` |
-| `tools` | 执行 `retrieve_chunks`、`list_headings`、`count_tables` |
+| `tools` | 执行 `retrieve_chunks`、`list_headings`、`count_tables`、`check_machine_health` |
 | `evaluator` | 汇总各子问题证据，决定继续检索或进入回答 |
 | `answer` | 基于已收集证据生成最终答复 |
 
@@ -100,6 +105,7 @@ evaluator ──(need_more_retrieval / next_sub_query)──→ agent
 | `retrieve_chunks` | 文档内容、概念、段落相关问答；可利用 `history` 做指代消解 |
 | `list_headings` | 章节、目录、文档结构（基于 chunk 启发式提取） |
 | `count_tables` | 表格迹象统计（启发式，非 PDF 原生表格解析） |
+| `check_machine_health` | 传感器数据 → 工业预测 API；返回 prediction、risk_level 等 |
 
 ### 3.3 对话 Memory
 
@@ -217,7 +223,7 @@ Smoke Test 全部通过 (4/4)
 make eval-ragas RAGAS_LIMIT=3 RAGAS_METRICS=all RAGAS_TIMEOUT=600
 ```
 
-### 6.2 Day 5 评估分数
+### 6.2 基线评估分数（2026-06-10，3/10 样本）
 
 | 指标 | 分数 | 含义 |
 |------|------|------|
@@ -250,12 +256,13 @@ make eval-ragas RAGAS_LIMIT=3 RAGAS_METRICS=all RAGAS_TIMEOUT=600
 
 | 限制 | 说明 |
 |------|------|
-| **进程级知识库** | FAISS 索引与 chunk 保存在内存，`kb_registry` 不做落盘；重启即失 |
-| **无持久化数据库** | 未接入 Redis、PostgreSQL 或外部向量库 |
+| **进程级 FAISS 向量** | FAISS 索引与 chunk 保存在内存；重启需重新上传 PDF |
+| **PostgreSQL 职责边界** | 仅存 documents / qa_logs 元数据与日志，**不存向量** |
 | **LoRA 模型未接入** | 生成与评估均使用 DashScope 在线 API（`qwen-plus`），未加载本地微调权重 |
 | **Memory 非服务端持久化** | 多轮对话依赖客户端传递 `history`，无跨会话用户记忆 |
 | **文档结构工具为启发式** | `list_headings`、`count_tables` 基于切块文本规则，不解析 PDF 原生结构 |
-| **RAGAS 样本规模有限** | 当前基线仅 3 条样本，faithfulness 全量评估较慢 |
+| **RAGAS 样本规模有限** | 当前基线仅 3/10 条样本；扩大样本时 faithfulness 评估较慢 |
+| **工业模型为 baseline** | 经 HTTP 调用的 industrial-health-demo 非生产级模型 |
 | **无鉴权与限流** | HTTP 接口对公网开放时不具备生产级安全防护 |
 | **无 CI/CD** | Smoke Test 与 RAGAS 需手动触发，未接入自动化流水线 |
 
@@ -265,7 +272,7 @@ make eval-ragas RAGAS_LIMIT=3 RAGAS_METRICS=all RAGAS_TIMEOUT=600
 
 1. **持久化知识库** — 将 FAISS 索引与元数据落盘，或接入 Chroma / Milvus 等向量数据库，支持重启恢复。  
 2. **接入微调模型** — 将 `llm-finetune-manual` 产出的 LoRA 权重接入 Agent `answer` 节点，支持本地推理与线上一致性对比。  
-3. **扩充评估样本** — 将 `evals/ragas_samples.json` 扩展至全量 10 条乃至更多，覆盖多跳推理与结构类问题。  
+3. **扩充评估样本** — 将 `evals/ragas_samples.json` 扩展至 10 条及以上，覆盖多跳推理与结构类问题。  
 4. **CI/CD 集成** — 在流水线中自动执行 `make smoke`，并对 RAGAS 基线分数做回归对比。  
 5. **生产化补强** — 鉴权、限流、日志结构化、知识库 TTL 管理等（按实际部署需求逐步引入）。
 
@@ -285,9 +292,18 @@ make eval-ragas RAGAS_LIMIT=3 RAGAS_METRICS=all RAGAS_TIMEOUT=600
 - 两个仓库**代码独立、依赖独立、部署独立**，不存在代码引用或共享运行时。
 - 二者在业务上同属「PDF 技术手册知识处理」链路的不同阶段：微调仓库解决「如何让模型更懂手册内容」，本仓库解决「如何基于手册内容进行可检索、可推理的问答」。
 - **当前 LoRA 微调模型尚未接入 rag-agent**。本仓库的 Agent 生成节点与 RAGAS 评估均调用 DashScope 在线 API，未加载 `llm-finetune-manual/outputs/` 下的 adapter 权重。
-- **Day 5 RAGAS 指标（faithfulness 0.8750、answer_relevancy 0.8858）仅反映 rag-agent 在 DashScope API 下的 Agent 问答表现**，与微调实验的训练 loss 或微调前后对比结果无直接关联。
+- **RAGAS 基线指标（faithfulness 0.8750、answer_relevancy 0.8858，3/10 样本）仅反映 rag-agent 在 DashScope API 下的 Agent 问答表现**，与微调实验的训练 loss 或微调前后对比结果无直接关联。
 
-### 9.3 预期衔接方式（尚未实现）
+### 9.3 与 industrial-health-demo 的关系
+
+| 项目 | 端口 | 职责 |
+|------|------|------|
+| **rag-agent**（本仓库） | 8000 | Agent 编排、RAG、UI、PostgreSQL 日志 |
+| **industrial-health-demo** | 8010 | scikit-learn baseline；`/predict` 含 risk_level |
+
+联动方式：`check_machine_health` 工具与 Streamlit「设备健康预测」Tab 均通过 HTTP 调用工业 API；两仓库代码与数据库解耦。
+
+### 9.4 预期 LoRA 衔接方式（尚未实现）
 
 后续若接入微调模型，大致路径为：
 
@@ -299,7 +315,7 @@ rag-agent Agent answer 节点切换为本地推理（或兼容 API 端点）
 重新运行 RAGAS，与当前 DashScope 基线对比
 ```
 
-该衔接列入第 8 节优化方向，**不属于本期已交付能力**。
+该衔接列入第 8 节后续优化方向，**尚未实现**。
 
 ---
 
@@ -315,6 +331,6 @@ make docker-up
 # 端到端验收
 make smoke
 
-# RAGAS 全量指标评估（Day 5 同款配置）
+# RAGAS 双指标基线（faithfulness + answer_relevancy，limit=3）
 make eval-ragas RAGAS_LIMIT=3 RAGAS_METRICS=all RAGAS_TIMEOUT=600
 ```

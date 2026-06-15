@@ -164,7 +164,7 @@ Streamlit 侧边栏应显示绿色 **「后端 /openapi.json 可访问」**。
 |--------|------|
 | **传统 ML baseline** | industrial-health-demo 使用经典机器学习分类模型（如 RandomForest / 逻辑回归等 baseline），用于演示「传感器 → 健康状态」链路，**不代表真实产线精度** |
 | **非生产模型** | 模型基于演示/合成数据训练，**不可直接用于生产决策**；预测结果仅供 POC 与联调展示 |
-| **LoRA 未接入** | rag-agent 的 LLM 仍走 DashScope `qwen-plus` 在线 API；**本阶段未接入 LoRA 微调权重**，Agent 推理与工具编排能力不受工业预测模型训练影响 |
+| **LoRA 未接入** | rag-agent 的 LLM 仍走 DashScope `qwen-plus` 在线 API；**LoRA 微调权重尚未接入 rag-agent**，Agent 推理与工具编排不受工业预测模型训练影响 |
 | **服务解耦** | industrial-health-demo 与 rag-agent **仅通过 HTTP 松耦合**（`HEALTH_API_URL`）；二者无共享进程、无共享数据库。工业预测服务可独立升级、替换或下线，不影响 PDF 问答主链路 |
 
 ---
