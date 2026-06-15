@@ -1,23 +1,77 @@
-# 项目总览（简历 / 面试版）
+# 项目总览
 
-> 更新日期：2026-06-10 · 交付状态：rag-agent Day 6 核心交付已完成
+> 更新日期：2026-06-15 · 关联文档：[README.md](../README.md) · [architecture.md](architecture.md) · [industrial_demo_guide.md](industrial_demo_guide.md)
 
-围绕 **PDF 技术手册知识处理**，我完成了两个**相关但完全解耦**的独立项目：**rag-agent** 负责可检索、可推理的问答服务；**llm-finetune-manual** 负责领域微调数据与 LoRA 训练验证。二者共享业务场景，但代码、依赖与部署互不引用；**LoRA 微调模型尚未接入 rag-agent**，问答生成仍调用 DashScope 在线 API（`qwen-plus`）。
+围绕 **PDF 知识处理** 与 **工业设备健康预测**，在同级目录维护三个**相关但解耦**的独立仓库：**rag-agent**（Agentic RAG 问答与编排）、**industrial-health-demo**（传感器 ML 训练与推理 API）、**llm-finetune-manual**（LoRA 微调实验）。代码、依赖与部署互不引用；**LoRA 权重尚未接入 rag-agent**，问答生成仍调用 DashScope 在线 API（`qwen-plus`）。
 
-## rag-agent（Agentic RAG）
+## 演示视频
 
-基于 **FastAPI + LangGraph + FAISS + DashScope**（`qwen-plus` 生成、TextEmbedding 向量化），实现 PDF 上传 → 切块向量化 → Agent 问答全流程：
+| 项 | 内容 |
+|----|------|
+| 文件 | `rag-demo.mp4` |
+| 链接 | https://pan.baidu.com/s/1G3FDGbw7h37hDuddjUFpRg |
+| 提取码 | `iqcq` |
 
-- **主路径** `POST /ask/`：planner 拆子问题 → agent 调用 `retrieve_chunks` / `list_headings` / `count_tables` → evaluator 决定是否继续检索 → 生成答案；支持请求级 Memory（最近 3 轮 `history`）与 `debug` 工具轨迹。
-- **对照基线** `POST /ask_rag/`：经典 RAG 单链路（检索 → Prompt → 生成），用于与 Agent 结果对照。
-- **工程化**：Docker Compose 一键部署；4 步 Smoke Test（`make smoke`，2026-06-10 Docker 环境 4/4 通过）；Makefile 统一 `run / docker-up / smoke / eval-ragas`。
-- **质量基线**：RAGAS 在 `test.pdf`（83 块）上评估 **3/10** 条样本（`metrics=all`），faithfulness **0.8750**、answer_relevancy **0.8858**（DashScope 在线 API，阶段性基线，非全量评估）。
-- **已知边界**：知识库为进程内存（重启需重新上传 PDF）；无持久化存储、无 CI/CD、无生产级鉴权。
+涵盖 PDF 上传问答、Debug Trace、PostgreSQL 历史记录、设备健康预测 Tab 及 Agent 调用 `check_machine_health`。
+
+---
+
+## rag-agent（Agentic RAG + Agent 工具集成）
+
+基于 **FastAPI + LangGraph + FAISS + PostgreSQL + Streamlit + DashScope**，实现 PDF 上传 → 切块向量化 → Agent 问答，并通过 HTTP 联动工业预测服务：
+
+| 能力方向 | 实现要点 |
+|----------|----------|
+| **RAG / Agent** | `POST /ask/`：planner → agent ⇄ tools → evaluator → answer；工具含 `retrieve_chunks`、`list_headings`、`count_tables`、**`check_machine_health`** |
+| **对照基线** | `POST /ask_rag/`：经典 RAG 单链路，用于与 Agent 对照 |
+| **Web 前端** | Streamlit UI：PDF 构建、多轮聊天、Debug Trace 四面板、「设备健康预测」Tab |
+| **结构化日志** | PostgreSQL `documents` / `qa_logs`（含 debug JSONB）；向量检索仍为进程内 FAISS |
+| **DevOps** | Docker Compose（API + PostgreSQL）；`make smoke`（4/4）；`make stack-up` / `stack-verify` 双服务栈（8000 + 8010） |
+| **RAG 评估** | RAGAS 基线（`test.pdf`，3/10 样本）：faithfulness **0.8750**、answer_relevancy **0.8858** |
+
+**工业联动：** `check_machine_health` → `app/tools/machine_health_tool.py` → `POST {HEALTH_API_URL}/predict`（默认 `http://127.0.0.1:8010`）。`debug.tool_trace` 可观测工具名、输入与输出预览；与 PDF 问答链路解耦、并存。
+
+**已知边界：** FAISS 向量不持久化（重启需重新上传 PDF）；无 CI/CD、无生产级鉴权；LoRA 未接入。
+
+---
+
+## industrial-health-demo（工业预测）
+
+独立工业制造质量分类 Demo：EDA → RandomForest 训练 → MLflow → FastAPI → Docker。
+
+| 阶段 | 产出 |
+|------|------|
+| EDA | `scripts/eda.py` → `docs/eda_summary.md` |
+| 训练 | `artifacts/model.pkl`、`metrics.json`、`schema.json` |
+| 推理 API | `:8010` — `/health`、`/model-info`、`POST /predict`（含 `prediction`、`risk_level`、`recommendation`） |
+| 容器化 | `make docker-up` / `make docker-verify` |
+
+**定位：** 传统 ML baseline，演示「能训练、能服务化、能 Docker 化」，**非生产级模型**。rag-agent 通过 HTTP 调用，不内嵌训练或模型文件。
+
+---
 
 ## llm-finetune-manual（LoRA 微调）
 
 跑通 PDF → Alpaca 数据集（**132** 条）→ LLaMA-Factory LoRA 微调 → 权重保存全流程：以 Qwen2-7B-Instruct 为基座，在本地 CPU 抽样 **50** 条、1 epoch 完成流程验证，产出 adapter 权重。定位为**管线可复现验证**，非可用领域模型；before/after 评测与 GPU 全量训练尚未完成。
 
-## 面试可强调
+---
 
-Agent 编排与工具化 RAG、经典 RAG 对照设计、Docker 可复现交付、RAGAS 质量基线、LoRA 数据与训练链路，以及对**已完成演示**与**未生产化边界**的清晰把控。
+## 三仓库关系
+
+```
+rag-agent (:8000)          industrial-health-demo (:8010)
+  PDF / Agent / PG  ──HTTP──►  传感器 ML 推理
+  Streamlit (:8501) ──直连──►  设备健康 Tab
+
+llm-finetune-manual        （独立实验，尚未接入 rag-agent）
+  PDF → LoRA adapter
+```
+
+---
+
+## 核心交付物
+
+- **代码：** `rag-agent`、`industrial-health-demo` 双仓库可独立运行与 Docker 部署
+- **文档：** [README.md](../README.md)、[ui_demo_guide.md](ui_demo_guide.md)、[industrial_demo_guide.md](industrial_demo_guide.md)、[delivery_checklist.md](delivery_checklist.md)
+- **演示：** 百度网盘 `rag-demo.mp4`（见上表）
+- **验收：** `make smoke`（RAG 主链路）、`make stack-verify`（双服务联动）
