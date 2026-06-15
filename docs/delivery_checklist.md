@@ -1,11 +1,11 @@
-# rag-agent 交付清单
+# rag-agent 验收清单
 
 > 最后核对：2026-06-11  
 > 关联文档：[final_report.md](final_report.md) · [README.md](../README.md) · [ui_demo_guide.md](ui_demo_guide.md)
 
 ---
 
-## 交付状态总览
+## 验收状态总览
 
 | 类别 | 状态 |
 |------|------|

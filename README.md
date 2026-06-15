@@ -8,6 +8,18 @@
 
 ---
 
+## 关联 GitHub 仓库
+
+| 仓库 | GitHub | 说明 |
+|------|--------|------|
+| **rag-agent** | https://github.com/ShihangPENg-afk/rag-agent | 本仓库：Agentic RAG、Streamlit、PostgreSQL |
+| **industrial-health-demo** | https://github.com/ShihangPENg-afk/industrial-health-demo | 工业 ML 训练与推理 API（`:8010`） |
+| **llm-finetune-manual** | https://github.com/ShihangPENg-afk/llm-finetune-manual | LoRA 微调实验（**尚未接入**本仓库） |
+
+三个仓库**代码与部署相互独立**。本地双服务联调时，请将上述仓库 clone 到**同级目录**（例如 `pythonProject1/rag-agent` 与 `pythonProject1/industrial-health-demo` 并列），详见 [4.1 双服务联动](#41-双服务联动rag-agent--industrial-health-demo)。
+
+---
+
 ## 视频演示
 
 完整功能演示视频（PDF 问答、Debug Trace、PostgreSQL 历史、设备健康预测 Tab、Agent 调用 `check_machine_health`）可通过百度网盘观看：
@@ -30,13 +42,13 @@
 | **Web 开发** | FastAPI REST API + Streamlit 宽屏 UI；Debug Trace 四面板可视化 |
 | **DevOps** | Docker Compose（API + PostgreSQL）；`make smoke` 四步冒烟；`make stack-up` 双服务栈联动 |
 | **RAG 评估** | RAGAS 离线评估（faithfulness **0.875**、answer_relevancy **0.886**，3/10 样本基线） |
-| **工业场景 AI** | 联动 [industrial-health-demo](../industrial-health-demo)（`:8010`）；传感器 → `prediction` / `risk_level` / 运维建议 |
+| **工业场景 AI** | 联动 [industrial-health-demo](https://github.com/ShihangPENg-afk/industrial-health-demo)（`:8010`）；传感器 → `prediction` / `risk_level` / 运维建议 |
 | **Agent 工具集成** | `check_machine_health` 经 HTTP 调工业 `/predict`；`debug.tool_trace` 可观测；与 PDF 问答链路解耦并存 |
 
-**关联独立仓库（同级目录）：**
+**关联独立仓库：**
 
-- **[industrial-health-demo](../industrial-health-demo)** — EDA、RandomForest 训练、FastAPI 推理、Docker（工业预测）
-- **[llm-finetune-manual](../llm-finetune-manual)** — PDF → LoRA 微调实验（**尚未接入**本仓库）
+- **[industrial-health-demo](https://github.com/ShihangPENg-afk/industrial-health-demo)** — EDA、RandomForest 训练、FastAPI 推理、Docker（工业预测）
+- **[llm-finetune-manual](https://github.com/ShihangPENg-afk/llm-finetune-manual)** — PDF → LoRA 微调实验（**尚未接入**本仓库）
 
 ---
 
@@ -74,7 +86,7 @@
 | 元数据 / 日志 | **PostgreSQL 16**、SQLAlchemy（`documents`、`qa_logs` 表） |
 | 大模型 / 向量 | **DashScope**（`qwen-plus`、TextEmbedding），通过 **OpenAI-compatible API** 调用 |
 | 容器化 | **Docker**、**Docker Compose**（`rag-agent` + `postgres`；工业服务见 sibling 仓库） |
-| 工业预测（外部） | **[industrial-health-demo](../industrial-health-demo)**：scikit-learn、FastAPI `:8010`（本仓库通过 HTTP 调用） |
+| 工业预测（外部） | **[industrial-health-demo](https://github.com/ShihangPENg-afk/industrial-health-demo)**：scikit-learn、FastAPI `:8010`（本仓库通过 HTTP 调用） |
 | 质量评估 | **RAGAS**（`Faithfulness`、`ResponseRelevancy`） |
 | 文本处理 | pypdf、langchain-text-splitters |
 
@@ -115,6 +127,16 @@ Streamlit UI（:8501）──┬── API_BASE_URL → rag-agent :8000（PDF / 
 
 - Python 3.10+
 - 可访问阿里云 DashScope 的网络环境
+
+### 0. 克隆仓库（首次）
+
+```bash
+git clone https://github.com/ShihangPENg-afk/rag-agent.git
+# 双服务联调时，将 industrial-health-demo 克隆到同级目录：
+git clone https://github.com/ShihangPENg-afk/industrial-health-demo.git
+# LoRA 实验为独立仓库（可选）：
+git clone https://github.com/ShihangPENg-afk/llm-finetune-manual.git
+```
 
 ### 1. 安装依赖
 
@@ -435,7 +457,7 @@ python evals/run_ragas_eval.py \
 
 ## 与 industrial-health-demo 的关系
 
-**[industrial-health-demo](../industrial-health-demo)** 是独立的工业预测仓库：EDA → RandomForest 训练 → MLflow → FastAPI 推理（`:8010`）。**非生产级 baseline 模型**，用于演示「传感器特征 → 质量/风险分类」的服务化流程。
+**[industrial-health-demo](https://github.com/ShihangPENg-afk/industrial-health-demo)** 是独立的工业预测仓库：EDA → RandomForest 训练 → MLflow → FastAPI 推理（`:8010`）。**非生产级 baseline 模型**，用于演示「传感器特征 → 质量/风险分类」的服务化流程。
 
 | 项目 | 端口 | 职责 |
 |------|------|------|
@@ -458,7 +480,7 @@ make docker-up && make docker-verify   # 无 make run；Docker 映射 :8010
 
 ## 与 llm-finetune-manual 的关系
 
-**[llm-finetune-manual](../llm-finetune-manual)** 是独立的 LoRA 微调实验仓库，负责将 PDF 技术手册处理为 Alpaca 格式数据，并在 CPU 环境下完成 Qwen2-7B LoRA 微调验证。
+**[llm-finetune-manual](https://github.com/ShihangPENg-afk/llm-finetune-manual)** 是独立的 LoRA 微调实验仓库，负责将 PDF 技术手册处理为 Alpaca 格式数据，并在 CPU 环境下完成 Qwen2-7B LoRA 微调验证。
 
 | 项目 | 职责 | 当前状态 |
 |------|------|----------|
@@ -488,7 +510,7 @@ make docker-up && make docker-verify   # 无 make run；Docker 映射 :8010
 ## 后续计划
 
 - [ ] **FAISS / 向量持久化** — 将 FAISS 索引落盘或接入专用向量数据库，支持重启后无需重新上传即可问答
-- [ ] **接入微调模型** — 将 llm-finetune-manual 产出的 LoRA 权重接入 Agent 生成节点（**当前阶段未接入**）
+- [ ] **接入微调模型** — 将 [llm-finetune-manual](https://github.com/ShihangPENg-afk/llm-finetune-manual) 产出的 LoRA 权重接入 Agent 生成节点（**尚未接入**）
 - [ ] **增加评估样本** — 扩充 `evals/ragas_samples.json`，覆盖多跳推理与结构类问题
 - [ ] **增加 CI/CD** — 在流水线中自动运行 Smoke Test 与 RAGAS 基线对比
 

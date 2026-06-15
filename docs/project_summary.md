@@ -2,7 +2,13 @@
 
 > 更新日期：2026-06-15 · 关联文档：[README.md](../README.md) · [architecture.md](architecture.md) · [industrial_demo_guide.md](industrial_demo_guide.md)
 
-围绕 **PDF 知识处理** 与 **工业设备健康预测**，在同级目录维护三个**相关但解耦**的独立仓库：**rag-agent**（Agentic RAG 问答与编排）、**industrial-health-demo**（传感器 ML 训练与推理 API）、**llm-finetune-manual**（LoRA 微调实验）。代码、依赖与部署互不引用；**LoRA 权重尚未接入 rag-agent**，问答生成仍调用 DashScope 在线 API（`qwen-plus`）。
+围绕 **PDF 知识处理** 与 **工业设备健康预测**，维护三个**相关但解耦**的独立 GitHub 仓库（见下表）。代码、依赖与部署互不引用；**LoRA 权重尚未接入 rag-agent**，问答生成仍调用 DashScope 在线 API（`qwen-plus`）。
+
+| 仓库 | GitHub |
+|------|--------|
+| rag-agent | https://github.com/ShihangPENg-afk/rag-agent |
+| industrial-health-demo | https://github.com/ShihangPENg-afk/industrial-health-demo |
+| llm-finetune-manual | https://github.com/ShihangPENg-afk/llm-finetune-manual |
 
 ## 演示视频
 
@@ -69,7 +75,7 @@ llm-finetune-manual        （独立实验，尚未接入 rag-agent）
 
 ---
 
-## 核心交付物
+## 核心产出
 
 - **代码：** `rag-agent`、`industrial-health-demo` 双仓库可独立运行与 Docker 部署
 - **文档：** [README.md](../README.md)、[ui_demo_guide.md](ui_demo_guide.md)、[industrial_demo_guide.md](industrial_demo_guide.md)、[delivery_checklist.md](delivery_checklist.md)
