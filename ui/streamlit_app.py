@@ -898,8 +898,8 @@ def _render_debug_help_tab() -> None:
                 "GET  /qa_logs/?knowledge_base_id=...      # 历史问答",
                 "POST /upload_pdf/                         # 上传 PDF",
                 "POST /ask/                                # Agent 问答（debug=true）",
-                "GET  /health (industrial-health-demo)     # 设备健康预测服务",
-                "POST /predict (industrial-health-demo)    # 传感器参数预测",
+                "GET  /health (predictive-maintenance-mini)     # 设备健康预测服务",
+                "POST /predict (predictive-maintenance-mini)    # 传感器参数预测",
             ]
         ),
         language="text",
@@ -908,7 +908,7 @@ def _render_debug_help_tab() -> None:
     st.markdown(
         """
         **设备健康预测**（独立 Tab）通过 `HEALTH_API_URL`（默认 `http://127.0.0.1:8010`）
-        调用 industrial-health-demo 的 `/model-info` 与 `/predict`，与 PDF 问答链路互不干扰。
+        调用 predictive-maintenance-mini 的 `/model-info` 与 `/predict`，与 PDF 问答链路互不干扰。
         """
     )
 

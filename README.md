@@ -15,10 +15,10 @@
 | 仓库 | GitHub | 说明 |
 |------|--------|------|
 | **rag-agentic-system** | https://github.com/ShihangPENg-afk/rag-agentic-system | 本仓库：Agentic RAG、Streamlit、PostgreSQL |
-| **industrial-health-demo** | https://github.com/ShihangPENg-afk/industrial-health-demo | 工业 ML 训练与推理 API（`:8010`） |
-| **llm-finetune-manual** | https://github.com/ShihangPENg-afk/llm-finetune-manual | LoRA 微调实验（**尚未接入**本仓库） |
+| **predictive-maintenance-mini** | https://github.com/ShihangPENg-afk/predictive-maintenance-mini | 工业 ML 训练与推理 API（`:8010`） |
+| **llm-finetune-for-manufacturing** | https://github.com/ShihangPENg-afk/llm-finetune-for-manufacturing | LoRA 微调实验（**尚未接入**本仓库） |
 
-三个仓库**代码与部署相互独立**。本地双服务联调时，请将上述仓库 clone 到**同级目录**（例如 `pythonProject1/rag-agentic-system` 与 `pythonProject1/industrial-health-demo` 并列），详见 [4.1 双服务联动](#41-双服务联动rag-agentic-system--industrial-health-demo)。
+三个仓库**代码与部署相互独立**。本地双服务联调时，请将上述仓库 clone 到**同级目录**（例如 `pythonProject1/rag-agentic-system` 与 `pythonProject1/predictive-maintenance-mini` 并列），详见 [4.1 双服务联动](#41-双服务联动rag-agentic-system--predictive-maintenance-mini)。
 
 ---
 
@@ -43,13 +43,13 @@
 | **Web 开发** | FastAPI REST API + Streamlit 宽屏 UI；Debug Trace 四面板可视化 |
 | **DevOps** | Docker Compose（API + PostgreSQL）；`make smoke` 四步冒烟；`make stack-up` 双服务栈联动 |
 | **RAG 评估** | RAGAS 离线评估（faithfulness **0.875**、answer_relevancy **0.886**，3/10 样本基线） |
-| **工业场景 AI** | 联动 [industrial-health-demo](https://github.com/ShihangPENg-afk/industrial-health-demo)（`:8010`）；传感器 → `prediction` / `risk_level` / 运维建议 |
+| **工业场景 AI** | 联动 [predictive-maintenance-mini](https://github.com/ShihangPENg-afk/predictive-maintenance-mini)（`:8010`）；传感器 → `prediction` / `risk_level` / 运维建议 |
 | **Agent 工具集成** | `check_machine_health` 经 HTTP 调工业 `/predict`；`debug.tool_trace` 可观测；与 PDF 问答链路解耦并存 |
 
 **关联独立仓库：**
 
-- **[industrial-health-demo](https://github.com/ShihangPENg-afk/industrial-health-demo)** — EDA、RandomForest 训练、FastAPI 推理、Docker（工业预测）
-- **[llm-finetune-manual](https://github.com/ShihangPENg-afk/llm-finetune-manual)** — PDF → LoRA 微调实验（**尚未接入**本仓库）
+- **[predictive-maintenance-mini](https://github.com/ShihangPENg-afk/predictive-maintenance-mini)** — EDA、RandomForest 训练、FastAPI 推理、Docker（工业预测）
+- **[llm-finetune-for-manufacturing](https://github.com/ShihangPENg-afk/llm-finetune-for-manufacturing)** — PDF → LoRA 微调实验（**尚未接入**本仓库）
 
 ---
 
@@ -60,11 +60,11 @@
 | **PDF 上传与文本切块** | 单文件 / 批量上传，校验 `%PDF` 魔数，pypdf 解析后切块、去重 |
 | **FAISS 向量检索** | DashScope TextEmbedding 向量化，进程内 FAISS 相似度检索 |
 | **Agent 工具调用** | LangGraph 驱动，支持 `retrieve_chunks`、`list_headings`、`count_tables`、**`check_machine_health`**（工业预测） |
-| **工业预测联动** | Agent 工具 / Streamlit Tab 双入口，HTTP 调用 industrial-health-demo 的 `/predict` |
+| **工业预测联动** | Agent 工具 / Streamlit Tab 双入口，HTTP 调用 predictive-maintenance-mini 的 `/predict` |
 | **多步推理** | `planner` 拆解子问题，`evaluator` 汇总证据并决定是否继续检索 |
 | **对话 Memory** | 请求体传入 `history`，保留最近 3 轮；Agent 将历史摘要注入 system message，检索工具也可利用历史做指代消解 |
 | **Debug trace** | `/ask/` 设置 `debug: true`，返回 `tool_trace`、`reasoning_snapshot`、`retrieved_evidence_preview` |
-| **Streamlit UI** | 浏览器端上传 PDF、多轮问答、Debug Trace 可视化、历史问答查看、**设备健康预测**（联动 industrial-health-demo） |
+| **Streamlit UI** | 浏览器端上传 PDF、多轮问答、Debug Trace 可视化、历史问答查看、**设备健康预测**（联动 predictive-maintenance-mini） |
 | **PostgreSQL 混合持久化** | 文档元信息与 QA 日志落库；**向量检索仍用进程内 FAISS** |
 | **Docker 部署** | `Dockerfile` + `docker-compose.yml`（含 PostgreSQL），含 healthcheck |
 | **RAGAS 评估** | 离线脚本对 Agent 回答打分，输出 JSON / Markdown 报告 |
@@ -87,7 +87,7 @@
 | 元数据 / 日志 | **PostgreSQL 16**、SQLAlchemy（`documents`、`qa_logs` 表） |
 | 大模型 / 向量 | **DashScope**（`qwen-plus`、TextEmbedding），通过 **OpenAI-compatible API** 调用 |
 | 容器化 | **Docker**、**Docker Compose**（`rag-agentic-system` + `postgres`；工业服务见 sibling 仓库） |
-| 工业预测（外部） | **[industrial-health-demo](https://github.com/ShihangPENg-afk/industrial-health-demo)**：scikit-learn、FastAPI `:8010`（本仓库通过 HTTP 调用） |
+| 工业预测（外部） | **[predictive-maintenance-mini](https://github.com/ShihangPENg-afk/predictive-maintenance-mini)**：scikit-learn、FastAPI `:8010`（本仓库通过 HTTP 调用） |
 | 质量评估 | **RAGAS**（`Faithfulness`、`ResponseRelevancy`） |
 | 文本处理 | pypdf、langchain-text-splitters |
 
@@ -103,7 +103,7 @@
               │   planner → agent ⇄ tools → evaluator → answer
               │                    ↓
               │    retrieve_chunks / list_headings / count_tables
-              │    check_machine_health ──HTTP──► industrial-health-demo :8010
+              │    check_machine_health ──HTTP──► predictive-maintenance-mini :8010
               │                                      POST /predict → risk_level
               ↓
      PostgreSQL documents 表（元信息：文件名、块数、状态）
@@ -111,7 +111,7 @@
                     qa_logs 表（问答历史 + 可选 debug JSON）
 
 Streamlit UI（:8501）──┬── API_BASE_URL → rag-agentic-system :8000（PDF / 聊天 / Debug）
-                       └── HEALTH_API_URL → industrial-health-demo :8010（设备健康 Tab 直连）
+                       └── HEALTH_API_URL → predictive-maintenance-mini :8010（设备健康 Tab 直连）
 
                     POST /ask_rag/（经典 RAG，回退）
                               ↓
@@ -133,10 +133,10 @@ Streamlit UI（:8501）──┬── API_BASE_URL → rag-agentic-system :8000
 
 ```bash
 git clone https://github.com/ShihangPENg-afk/rag-agentic-system.git
-# 双服务联调时，将 industrial-health-demo 克隆到同级目录：
-git clone https://github.com/ShihangPENg-afk/industrial-health-demo.git
+# 双服务联调时，将 predictive-maintenance-mini 克隆到同级目录：
+git clone https://github.com/ShihangPENg-afk/predictive-maintenance-mini.git
 # LoRA 实验为独立仓库（可选）：
-git clone https://github.com/ShihangPENg-afk/llm-finetune-manual.git
+git clone https://github.com/ShihangPENg-afk/llm-finetune-for-manufacturing.git
 ```
 
 ### 1. 安装依赖
@@ -165,7 +165,7 @@ POSTGRES_PASSWORD=ragagent_secret
 POSTGRES_DB=ragagent
 DATABASE_URL=postgresql+psycopg2://ragagent:ragagent_secret@localhost:5432/ragagent
 
-# 工业设备健康预测 API（industrial-health-demo，默认 :8010）
+# 工业设备健康预测 API（predictive-maintenance-mini，默认 :8010）
 HEALTH_API_URL=http://127.0.0.1:8010
 ```
 
@@ -221,28 +221,28 @@ streamlit run ui/streamlit_app.py
 
 UI 主要能力：PDF 上传与向量库构建、多轮 Agent 问答、Debug Trace 可视化、「历史记录」页查看 PostgreSQL 中的 QA 日志、**「设备健康预测」** Tab 调用工业健康 API。演示步骤见 [docs/ui_demo_guide.md](docs/ui_demo_guide.md) 与 [docs/industrial_demo_guide.md](docs/industrial_demo_guide.md)。
 
-### 4.1 双服务联动（rag-agentic-system + industrial-health-demo）
+### 4.1 双服务联动（rag-agentic-system + predictive-maintenance-mini）
 
-两个仓库通过 **HTTP 松耦合**：rag-agentic-system 占 **8000**，industrial-health-demo 占 **8010**，互不共用进程或数据库。
+两个仓库通过 **HTTP 松耦合**：rag-agentic-system 占 **8000**，predictive-maintenance-mini 占 **8010**，互不共用进程或数据库。
 
 | 服务 | 端口 | 职责 |
 |------|------|------|
 | **rag-agentic-system** | `8000` | PDF 上传、Agent 问答、PostgreSQL 元数据 |
-| **industrial-health-demo** | `8010` | 传感器特征 → 设备健康分类（`/health`、`/model-info`、`/predict`） |
+| **predictive-maintenance-mini** | `8010` | 传感器特征 → 设备健康分类（`/health`、`/model-info`、`/predict`） |
 
-**一键启动双服务栈**（需同级目录存在 `../industrial-health-demo`）：
+**一键启动双服务栈**（需同级目录存在 `../predictive-maintenance-mini`）：
 
 ```bash
 # rag-agentic-system 仓库内
-make stack-up          # 先起 industrial-health-demo Docker，再起 rag-agentic-system Docker
+make stack-up          # 先起 predictive-maintenance-mini Docker，再起 rag-agentic-system Docker
 make stack-verify      # 验证 8000 + 8010 均正常
 ```
 
 或分步启动：
 
 ```bash
-# 终端 A — industrial-health-demo（无 make run，仅 Docker 或 uvicorn）
-cd ../industrial-health-demo
+# 终端 A — predictive-maintenance-mini（无 make run，仅 Docker 或 uvicorn）
+cd ../predictive-maintenance-mini
 make docker-up         # 若缺 model.pkl 会先 train
 sleep 5                # 等待 uvicorn 加载模型后再 verify
 make docker-verify     # curl /health /model-info + 样例 /predict
@@ -268,10 +268,10 @@ make ui
 在 UI 中：
 
 - **侧边栏** `API_BASE_URL` → rag-agentic-system（PDF / 聊天 / Debug Trace）
-- **「设备健康预测」Tab** `HEALTH_API_URL` → industrial-health-demo（默认 `http://127.0.0.1:8010`）
+- **「设备健康预测」Tab** `HEALTH_API_URL` → predictive-maintenance-mini（默认 `http://127.0.0.1:8010`）
 - 点击「获取模型信息」加载特征字段 → 输入传感器参数 →「预测设备健康状态」
 
-> **端口冲突注意**：不要在宿主机用 `uvicorn ... --port 8000` 启动 industrial-health-demo；该服务应仅监听 **8010**（Docker 已配置）。若 `make smoke` 报「指向了错误的服务」，说明 8000 被其他进程占用，停止后仅保留 rag-agentic-system 容器即可。
+> **端口冲突注意**：不要在宿主机用 `uvicorn ... --port 8000` 启动 predictive-maintenance-mini；该服务应仅监听 **8010**（Docker 已配置）。若 `make smoke` 报「指向了错误的服务」，说明 8000 被其他进程占用，停止后仅保留 rag-agentic-system 容器即可。
 
 > **Docker 内调用工业 API**：`docker-compose.yml` 中 `HEALTH_API_URL` 默认为 `http://host.docker.internal:8010`（适用于 Docker Desktop / macOS）。在 **Linux** 上若 Agent 容器无法访问宿主机 `:8010`，需在 compose 中增加 `extra_hosts: ["host.docker.internal:host-gateway"]`，或改为宿主机局域网 IP。
 
@@ -379,7 +379,7 @@ curl -X POST "http://127.0.0.1:8000/ask_rag/" \
 
 ### 设备健康预测 — Agent 触发 `check_machine_health`
 
-需先 `make smoke` 或上传 PDF 获得 `knowledge_base_id`；工业 API 需已在 `:8010` 运行（见 [4.1 双服务联动](#41-双服务联动rag-agentic-system--industrial-health-demo)）。
+需先 `make smoke` 或上传 PDF 获得 `knowledge_base_id`；工业 API 需已在 `:8010` 运行（见 [4.1 双服务联动](#41-双服务联动rag-agentic-system--predictive-maintenance-mini)）。
 
 ```bash
 curl -X POST "http://127.0.0.1:8000/ask/" \
@@ -461,14 +461,14 @@ python evals/run_ragas_eval.py \
 
 ---
 
-## 与 industrial-health-demo 的关系
+## 与 predictive-maintenance-mini 的关系
 
-**[industrial-health-demo](https://github.com/ShihangPENg-afk/industrial-health-demo)** 是独立的工业预测仓库：EDA → RandomForest 训练 → MLflow → FastAPI 推理（`:8010`）。**非生产级 baseline 模型**，用于演示「传感器特征 → 质量/风险分类」的服务化流程。
+**[predictive-maintenance-mini](https://github.com/ShihangPENg-afk/predictive-maintenance-mini)** 是独立的工业预测仓库：EDA → RandomForest 训练 → MLflow → FastAPI 推理（`:8010`）。**非生产级 baseline 模型**，用于演示「传感器特征 → 质量/风险分类」的服务化流程。
 
 | 项目 | 端口 | 职责 |
 |------|------|------|
 | **rag-agentic-system**（本仓库） | `8000` | PDF 问答、Agent 编排、PostgreSQL 日志、Streamlit |
-| **industrial-health-demo** | `8010` | `/health`、`/model-info`、`POST /predict`（含 `risk_level`） |
+| **predictive-maintenance-mini** | `8010` | `/health`、`/model-info`、`POST /predict`（含 `risk_level`） |
 
 **联动方式：**
 
@@ -476,7 +476,7 @@ python evals/run_ragas_eval.py \
 - **Streamlit 直连**：「设备健康预测」Tab 不经过 Agent，直接调 `:8010`
 - **解耦边界**：两仓库无共享进程、无共享数据库；工业服务可独立升级或替换
 
-工业预测 API 本地启动（在 `industrial-health-demo` 目录）：
+工业预测 API 本地启动（在 `predictive-maintenance-mini` 目录）：
 
 ```bash
 make docker-up && make docker-verify   # 无 make run；Docker 映射 :8010
@@ -484,15 +484,15 @@ make docker-up && make docker-verify   # 无 make run；Docker 映射 :8010
 
 ---
 
-## 与 llm-finetune-manual 的关系
+## 与 llm-finetune-for-manufacturing 的关系
 
-**[llm-finetune-manual](https://github.com/ShihangPENg-afk/llm-finetune-manual)** 是独立的 LoRA 微调实验仓库，负责将 PDF 技术手册处理为 Alpaca 格式数据，并在 CPU 环境下完成 Qwen2-7B LoRA 微调验证。
+**[llm-finetune-for-manufacturing](https://github.com/ShihangPENg-afk/llm-finetune-for-manufacturing)** 是独立的 LoRA 微调实验仓库，负责将 PDF 技术手册处理为 Alpaca 格式数据，并在 CPU 环境下完成 Qwen2-7B LoRA 微调验证。
 
 | 项目 | 职责 | 当前状态 |
 |------|------|----------|
 | **rag-agentic-system**（本仓库） | Agentic RAG 问答、工业工具集成、RAGAS 评估 | 工程化 POC 演示 |
-| **industrial-health-demo** | 工业 ML 训练与推理 API | 独立服务，HTTP 联动 |
-| **llm-finetune-manual** | PDF → Alpaca 数据集 → LoRA 微调 | 独立实验，已完成 CPU 微调验证 |
+| **predictive-maintenance-mini** | 工业 ML 训练与推理 API | 独立服务，HTTP 联动 |
+| **llm-finetune-for-manufacturing** | PDF → Alpaca 数据集 → LoRA 微调 | 独立实验，已完成 CPU 微调验证 |
 
 **LoRA 与 RAGAS：**
 
@@ -505,7 +505,7 @@ make docker-up && make docker-verify   # 无 make run；Docker 映射 :8010
 
 - **向量仍为进程内 FAISS**：FAISS 索引与 chunk 文本保存在内存中，服务或容器重启后需重新上传 PDF 才能问答；PostgreSQL **不**存储向量或 chunk 正文。
 - **PostgreSQL 仅混合持久化**：`documents` 表记录上传元信息，`qa_logs` 表记录 Agent 问答与 debug 快照；重启后可在 UI/API 查看历史，但无法仅凭数据库记录恢复检索能力。
-- **工业模型为演示 baseline**：industrial-health-demo 使用 RandomForest + 小规模样本，**不可直接用于生产决策**；`/predict` 要求完整特征字段（如 `speed`、`humidity`）。
+- **工业模型为演示 baseline**：predictive-maintenance-mini 使用 RandomForest + 小规模样本，**不可直接用于生产决策**；`/predict` 要求完整特征字段（如 `speed`、`humidity`）。
 - **LoRA 微调模型尚未接入**：生成与评估均依赖 DashScope 在线 API（`qwen-plus`），未加载本地微调权重。
 - **faithfulness 评估较慢**：RAGAS `Faithfulness` 需额外 LLM 判分，多样本并发时易超时；脚本在 `metrics=faithfulness` 时会自动切换逐条串行模式。
 - **文档结构工具为启发式**：`list_headings`、`count_tables` 基于切块文本规则，不解析 PDF 原生目录或表格对象。
@@ -518,7 +518,7 @@ make docker-up && make docker-verify   # 无 make run；Docker 映射 :8010
 ## 后续计划
 
 - [ ] **FAISS / 向量持久化** — 将 FAISS 索引落盘或接入专用向量数据库，支持重启后无需重新上传即可问答
-- [ ] **接入微调模型** — 将 [llm-finetune-manual](https://github.com/ShihangPENg-afk/llm-finetune-manual) 产出的 LoRA 权重接入 Agent 生成节点（**尚未接入**）
+- [ ] **接入微调模型** — 将 [llm-finetune-for-manufacturing](https://github.com/ShihangPENg-afk/llm-finetune-for-manufacturing) 产出的 LoRA 权重接入 Agent 生成节点（**尚未接入**）
 - [ ] **增加评估样本** — 扩充 `evals/ragas_samples.json`，覆盖多跳推理与结构类问题
 - [x] **CI 基础流水线** — GitHub Actions 运行离线单元测试与编译检查（见 `.github/workflows/ci.yml`）
 - [ ] **Smoke / RAGAS 接入 CI** — 需 DashScope Key 的端到端与评估流水线
@@ -574,7 +574,7 @@ make help             # 查看所有命令
 make run              # 本地启动 FastAPI (:8000)
 make docker-up        # Docker 后台启动（API + PostgreSQL）
 make docker-down      # 停止容器
-make stack-up         # 启动 rag-agentic-system + industrial-health-demo 双栈
+make stack-up         # 启动 rag-agentic-system + predictive-maintenance-mini 双栈
 make stack-verify     # 验证 :8000 与 :8010 均正常
 make smoke            # 端到端冒烟测试（4/4）
 make eval-ragas       # RAGAS 评估

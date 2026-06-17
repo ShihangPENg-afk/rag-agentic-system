@@ -27,7 +27,7 @@ step_fail() {
 }
 
 echo "============================================================"
-echo "双服务联动检查 (rag-agentic-system + industrial-health-demo)"
+echo "双服务联动检查 (rag-agentic-system + predictive-maintenance-mini)"
 echo "============================================================"
 echo "RAG API    : ${RAG_BASE_URL}"
 echo "Health API : ${HEALTH_BASE_URL}"
@@ -54,14 +54,14 @@ fi
 step_ok "rag-agentic-system OpenAPI 标题正确"
 
 if ! curl -fsS "${HEALTH_BASE_URL}/health" -o /dev/null; then
-  step_fail "industrial-health /health 不可访问（请先 cd ../industrial-health-demo && make docker-up）"
+  step_fail "predictive-maintenance-mini /health 不可访问（请先 cd ../predictive-maintenance-mini && make docker-up）"
 fi
-step_ok "industrial-health /health"
+step_ok "predictive-maintenance-mini /health"
 
 if ! MODEL_INFO="$(curl -fsS "${HEALTH_BASE_URL}/model-info")"; then
-  step_fail "industrial-health /model-info 不可访问"
+  step_fail "predictive-maintenance-mini /model-info 不可访问"
 fi
-step_ok "industrial-health /model-info"
+step_ok "predictive-maintenance-mini /model-info"
 
 PAYLOAD="$("${PYTHON_BIN}" -c '
 import json, sys
@@ -73,9 +73,9 @@ print(json.dumps({"features": {name: 0 for name in features}}))
 if ! curl -fsS -X POST "${HEALTH_BASE_URL}/predict" \
   -H "Content-Type: application/json" \
   -d "${PAYLOAD}" -o /dev/null; then
-  step_fail "industrial-health /predict 失败"
+  step_fail "predictive-maintenance-mini /predict 失败"
 fi
-step_ok "industrial-health /predict"
+step_ok "predictive-maintenance-mini /predict"
 
 echo
 echo "============================================================"

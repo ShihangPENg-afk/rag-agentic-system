@@ -15,10 +15,10 @@ See [docs/architecture.md](docs/architecture.md) for architecture details and [d
 | Repository | GitHub | Description |
 |------------|--------|-------------|
 | **rag-agentic-system** | https://github.com/ShihangPENg-afk/rag-agentic-system | This repo: Agentic RAG, Streamlit, PostgreSQL |
-| **industrial-health-demo** | https://github.com/ShihangPENg-afk/industrial-health-demo | Industrial ML training & inference API (`:8010`) |
-| **llm-finetune-manual** | https://github.com/ShihangPENg-afk/llm-finetune-manual | LoRA fine-tuning experiment (**not integrated** yet) |
+| **predictive-maintenance-mini** | https://github.com/ShihangPENg-afk/predictive-maintenance-mini | Industrial ML training & inference API (`:8010`) |
+| **llm-finetune-for-manufacturing** | https://github.com/ShihangPENg-afk/llm-finetune-for-manufacturing | LoRA fine-tuning experiment (**not integrated** yet) |
 
-The three repositories are **independent in code and deployment**. For local dual-service testing, clone them as **sibling directories** (e.g. `pythonProject1/rag-agentic-system` next to `pythonProject1/industrial-health-demo`). See [4.1 Dual-service stack](#41-dual-service-stack-rag-agentic-system--industrial-health-demo).
+The three repositories are **independent in code and deployment**. For local dual-service testing, clone them as **sibling directories** (e.g. `pythonProject1/rag-agentic-system` next to `pythonProject1/predictive-maintenance-mini`). See [4.1 Dual-service stack](#41-dual-service-stack-rag-agentic-system--predictive-maintenance-mini).
 
 ---
 
@@ -43,13 +43,13 @@ End-to-end demo (PDF Q&A, Debug Trace, PostgreSQL history, equipment health tab,
 | **Web** | FastAPI REST + Streamlit wide layout; four-panel Debug Trace |
 | **DevOps** | Docker Compose (API + PostgreSQL); `make smoke` (4 steps); `make stack-up` dual-service stack |
 | **RAG evaluation** | RAGAS offline eval (faithfulness **0.875**, answer_relevancy **0.886**, 3/10 sample baseline) |
-| **Industrial AI** | [industrial-health-demo](https://github.com/ShihangPENg-afk/industrial-health-demo) (`:8010`); sensor → `prediction` / `risk_level` / ops advice |
+| **Industrial AI** | [predictive-maintenance-mini](https://github.com/ShihangPENg-afk/predictive-maintenance-mini) (`:8010`); sensor → `prediction` / `risk_level` / ops advice |
 | **Agent tools** | `check_machine_health` via HTTP to `/predict`; observable in `debug.tool_trace`; decoupled from PDF Q&A |
 
 **Sibling repositories:**
 
-- **[industrial-health-demo](https://github.com/ShihangPENg-afk/industrial-health-demo)** — EDA, RandomForest training, FastAPI inference, Docker
-- **[llm-finetune-manual](https://github.com/ShihangPENg-afk/llm-finetune-manual)** — PDF → LoRA fine-tuning (**not integrated** into this repo)
+- **[predictive-maintenance-mini](https://github.com/ShihangPENg-afk/predictive-maintenance-mini)** — EDA, RandomForest training, FastAPI inference, Docker
+- **[llm-finetune-for-manufacturing](https://github.com/ShihangPENg-afk/llm-finetune-for-manufacturing)** — PDF → LoRA fine-tuning (**not integrated** into this repo)
 
 ---
 
@@ -60,7 +60,7 @@ End-to-end demo (PDF Q&A, Debug Trace, PostgreSQL history, equipment health tab,
 | **PDF upload & chunking** | Single/batch upload, `%PDF` magic check, pypdf parsing, deduplication |
 | **FAISS retrieval** | DashScope TextEmbedding + in-process FAISS similarity search |
 | **Agent tools** | LangGraph-driven: `retrieve_chunks`, `list_headings`, `count_tables`, **`check_machine_health`** |
-| **Industrial integration** | Agent tool + Streamlit tab; HTTP to industrial-health-demo `/predict` |
+| **Industrial integration** | Agent tool + Streamlit tab; HTTP to predictive-maintenance-mini `/predict` |
 | **Multi-step reasoning** | `planner` decomposes sub-questions; `evaluator` aggregates evidence |
 | **Conversation memory** | Client sends `history`; server keeps last 3 turns |
 | **Debug trace** | `debug: true` on `/ask/` returns `tool_trace`, `reasoning_snapshot`, `retrieved_evidence_preview` |
@@ -87,7 +87,7 @@ End-to-end demo (PDF Q&A, Debug Trace, PostgreSQL history, equipment health tab,
 | Metadata / logs | **PostgreSQL 16**, SQLAlchemy (`documents`, `qa_logs`) |
 | LLM / embeddings | **DashScope** (`qwen-plus`, TextEmbedding) via OpenAI-compatible API |
 | Containers | **Docker**, **Docker Compose** (`rag-agentic-system` + `postgres`) |
-| Industrial (external) | **[industrial-health-demo](https://github.com/ShihangPENg-afk/industrial-health-demo)** — scikit-learn, FastAPI `:8010` |
+| Industrial (external) | **[predictive-maintenance-mini](https://github.com/ShihangPENg-afk/predictive-maintenance-mini)** — scikit-learn, FastAPI `:8010` |
 | Quality | **RAGAS** (Faithfulness, ResponseRelevancy) |
 | Text | pypdf, langchain-text-splitters |
 
@@ -103,14 +103,14 @@ Upload PDF → chunk / embed → FAISS index (in-process)
               │   planner → agent ⇄ tools → evaluator → answer
               │                    ↓
               │    retrieve_chunks / list_headings / count_tables
-              │    check_machine_health ──HTTP──► industrial-health-demo :8010
+              │    check_machine_health ──HTTP──► predictive-maintenance-mini :8010
               ↓
      PostgreSQL documents (metadata)
                               ↓
                     qa_logs (QA history + optional debug JSON)
 
 Streamlit UI (:8501) ── API_BASE_URL → rag-agentic-system :8000
-                    └── HEALTH_API_URL → industrial-health-demo :8010
+                    └── HEALTH_API_URL → predictive-maintenance-mini :8010
 
                     POST /ask_rag/ (classic RAG fallback)
 ```
@@ -130,8 +130,8 @@ Streamlit UI (:8501) ── API_BASE_URL → rag-agentic-system :8000
 
 ```bash
 git clone https://github.com/ShihangPENg-afk/rag-agentic-system.git
-git clone https://github.com/ShihangPENg-afk/industrial-health-demo.git   # dual-service
-git clone https://github.com/ShihangPENg-afk/llm-finetune-manual.git      # optional LoRA experiment
+git clone https://github.com/ShihangPENg-afk/predictive-maintenance-mini.git   # dual-service
+git clone https://github.com/ShihangPENg-afk/llm-finetune-for-manufacturing.git      # optional LoRA experiment
 ```
 
 ### 1. Install dependencies
@@ -204,15 +204,15 @@ streamlit run ui/streamlit_app.py
 
 Browser: http://127.0.0.1:8501. See [docs/ui_demo_guide.md](docs/ui_demo_guide.md) and [docs/industrial_demo_guide.md](docs/industrial_demo_guide.md).
 
-### 4.1 Dual-service stack (rag-agentic-system + industrial-health-demo)
+### 4.1 Dual-service stack (rag-agentic-system + predictive-maintenance-mini)
 
 | Service | Port | Role |
 |---------|------|------|
 | **rag-agentic-system** | `8000` | PDF upload, Agent Q&A, PostgreSQL metadata |
-| **industrial-health-demo** | `8010` | Sensor features → health classification |
+| **predictive-maintenance-mini** | `8010` | Sensor features → health classification |
 
 ```bash
-# inside rag-agentic-system repo (requires ../industrial-health-demo)
+# inside rag-agentic-system repo (requires ../predictive-maintenance-mini)
 make stack-up
 make stack-verify
 ```
@@ -220,7 +220,7 @@ make stack-verify
 Or step by step:
 
 ```bash
-cd ../industrial-health-demo && make docker-up && sleep 5 && make docker-verify
+cd ../predictive-maintenance-mini && make docker-up && sleep 5 && make docker-verify
 cd ../rag-agentic-system && make env-check && make docker-up && make stack-verify
 ```
 
@@ -235,7 +235,7 @@ export HEALTH_API_URL=http://127.0.0.1:8010
 make ui
 ```
 
-> **Port conflict:** industrial-health-demo must listen on **8010**, not 8000. If `make smoke` reports the wrong service on 8000, stop conflicting processes.
+> **Port conflict:** predictive-maintenance-mini must listen on **8010**, not 8000. If `make smoke` reports the wrong service on 8000, stop conflicting processes.
 
 > **Docker → industrial API:** Default `HEALTH_API_URL=http://host.docker.internal:8010`. On Linux, add `extra_hosts: ["host.docker.internal:host-gateway"]` if needed.
 
@@ -299,7 +299,7 @@ Same payload as `/ask/` without Agent tools; response `mode` is `"rag"`.
 
 ### Equipment health — Agent triggers `check_machine_health`
 
-Requires industrial API on `:8010` (see [4.1](#41-dual-service-stack-rag-agentic-system--industrial-health-demo)).
+Requires industrial API on `:8010` (see [4.1](#41-dual-service-stack-rag-agentic-system--predictive-maintenance-mini)).
 
 ```bash
 curl -X POST "http://127.0.0.1:8000/ask/" \
@@ -358,7 +358,7 @@ make eval-ragas RAGAS_LIMIT=3 RAGAS_METRICS=all RAGAS_TIMEOUT=600
 
 ---
 
-## Relationship with industrial-health-demo
+## Relationship with predictive-maintenance-mini
 
 Independent repo: EDA → RandomForest → FastAPI (`:8010`). **Not production-grade.**
 
@@ -368,7 +368,7 @@ Independent repo: EDA → RandomForest → FastAPI (`:8010`). **Not production-g
 
 ---
 
-## Relationship with llm-finetune-manual
+## Relationship with llm-finetune-for-manufacturing
 
 Independent LoRA fine-tuning experiment. **LoRA weights are not integrated**—generation uses DashScope `qwen-plus`. RAGAS baseline scores apply to this repo only.
 
@@ -391,7 +391,7 @@ Independent LoRA fine-tuning experiment. **LoRA weights are not integrated**—g
 ## Roadmap
 
 - [ ] FAISS / vector persistence
-- [ ] Integrate LoRA weights from llm-finetune-manual
+- [ ] Integrate LoRA weights from llm-finetune-for-manufacturing
 - [ ] Expand RAGAS sample set
 - [x] Basic CI — GitHub Actions offline tests + compile check (`.github/workflows/ci.yml`)
 - [ ] Smoke / RAGAS in CI (requires DashScope secret)

@@ -11,7 +11,7 @@ PDF           ?= test.pdf
 BASE_URL      ?= http://127.0.0.1:8000
 SMOKE_SCRIPT  := scripts/smoke_test.sh
 
-INDUSTRIAL_HEALTH_DEMO_DIR ?= ../industrial-health-demo
+INDUSTRIAL_HEALTH_DEMO_DIR ?= ../predictive-maintenance-mini
 HEALTH_API_URL            ?= http://127.0.0.1:8010
 
 RAGAS_LIMIT   ?= 3
@@ -76,14 +76,14 @@ docker-down: ## 停止并移除 Docker 容器
 docker-logs: ## 跟踪 Docker 服务日志
 	$(COMPOSE) logs -f $(SERVICE)
 
-health-up: ## 启动 industrial-health-demo Docker 服务 (:8010)
+health-up: ## 启动 predictive-maintenance-mini Docker 服务 (:8010)
 	@test -d "$(INDUSTRIAL_HEALTH_DEMO_DIR)" || (echo "❌ 未找到 $(INDUSTRIAL_HEALTH_DEMO_DIR)，请设置 INDUSTRIAL_HEALTH_DEMO_DIR"; exit 1)
 	$(MAKE) -C "$(INDUSTRIAL_HEALTH_DEMO_DIR)" docker-up
 
-stack-up: env-check ## 启动 rag-agentic-system + industrial-health-demo 双服务栈
+stack-up: env-check ## 启动 rag-agentic-system + predictive-maintenance-mini 双服务栈
 	bash scripts/start_stack.sh
 
-stack-verify: ## 验证 rag-agentic-system (:8000) 与 industrial-health-demo (:8010)
+stack-verify: ## 验证 rag-agentic-system (:8000) 与 predictive-maintenance-mini (:8010)
 	bash scripts/verify_health_stack.sh $(BASE_URL) $(HEALTH_API_URL)
 
 ui: ## 启动 Streamlit UI（需后端已运行）

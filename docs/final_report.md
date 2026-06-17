@@ -44,7 +44,7 @@
 ├─────────────────────────────────────────────────────────┤
 │  工具层                                                  │
 │  retrieve_chunks · list_headings · count_tables          │
-│  check_machine_health（HTTP → industrial-health-demo）    │
+│  check_machine_health（HTTP → predictive-maintenance-mini）    │
 ├─────────────────────────────────────────────────────────┤
 │  持久化（PostgreSQL）                                    │
 │  documents · qa_logs（元数据与 QA 日志；向量不在 PG）      │
@@ -262,7 +262,7 @@ make eval-ragas RAGAS_LIMIT=3 RAGAS_METRICS=all RAGAS_TIMEOUT=600
 | **Memory 非服务端持久化** | 多轮对话依赖客户端传递 `history`，无跨会话用户记忆 |
 | **文档结构工具为启发式** | `list_headings`、`count_tables` 基于切块文本规则，不解析 PDF 原生结构 |
 | **RAGAS 样本规模有限** | 当前基线仅 3/10 条样本；扩大样本时 faithfulness 评估较慢 |
-| **工业模型为 baseline** | 经 HTTP 调用的 industrial-health-demo 非生产级模型 |
+| **工业模型为 baseline** | 经 HTTP 调用的 predictive-maintenance-mini 非生产级模型 |
 | **无鉴权与限流** | HTTP 接口对公网开放时不具备生产级安全防护 |
 | **无 CI/CD** | Smoke Test 与 RAGAS 需手动触发，未接入自动化流水线 |
 
@@ -271,35 +271,35 @@ make eval-ragas RAGAS_LIMIT=3 RAGAS_METRICS=all RAGAS_TIMEOUT=600
 ## 8. 后续优化方向
 
 1. **持久化知识库** — 将 FAISS 索引与元数据落盘，或接入 Chroma / Milvus 等向量数据库，支持重启恢复。  
-2. **接入微调模型** — 将 `llm-finetune-manual` 产出的 LoRA 权重接入 Agent `answer` 节点，支持本地推理与线上一致性对比。  
+2. **接入微调模型** — 将 `llm-finetune-for-manufacturing` 产出的 LoRA 权重接入 Agent `answer` 节点，支持本地推理与线上一致性对比。  
 3. **扩充评估样本** — 将 `evals/ragas_samples.json` 扩展至 10 条及以上，覆盖多跳推理与结构类问题。  
 4. **CI/CD 集成** — 在流水线中自动执行 `make smoke`，并对 RAGAS 基线分数做回归对比。  
 5. **生产化补强** — 鉴权、限流、日志结构化、知识库 TTL 管理等（按实际部署需求逐步引入）。
 
 ---
 
-## 9. 与 llm-finetune-manual 的关系说明
+## 9. 与 llm-finetune-for-manufacturing 的关系说明
 
 ### 9.1 两个项目的定位
 
 | 项目 | GitHub | 职责 |
 |------|--------|------|
 | **rag-agentic-system**（本仓库） | https://github.com/ShihangPENg-afk/rag-agentic-system | Agentic RAG 问答服务：PDF 上传、FAISS 检索、LangGraph Agent、RAGAS 评估、Docker 部署 |
-| **llm-finetune-manual** | https://github.com/ShihangPENg-afk/llm-finetune-manual | 独立微调实验：PDF → Alpaca 数据集 → Qwen2-7B LoRA CPU 微调验证 |
+| **llm-finetune-for-manufacturing** | https://github.com/ShihangPENg-afk/llm-finetune-for-manufacturing | 独立微调实验：PDF → Alpaca 数据集 → Qwen2-7B LoRA CPU 微调验证 |
 
 ### 9.2 关系边界
 
 - 两个仓库**代码独立、依赖独立、部署独立**，不存在代码引用或共享运行时。
 - 二者在业务上同属「PDF 技术手册知识处理」链路的不同阶段：微调仓库解决「如何让模型更懂手册内容」，本仓库解决「如何基于手册内容进行可检索、可推理的问答」。
-- **当前 LoRA 微调模型尚未接入 rag-agentic-system**。本仓库的 Agent 生成节点与 RAGAS 评估均调用 DashScope 在线 API，未加载 `llm-finetune-manual/outputs/` 下的 adapter 权重。
+- **当前 LoRA 微调模型尚未接入 rag-agentic-system**。本仓库的 Agent 生成节点与 RAGAS 评估均调用 DashScope 在线 API，未加载 `llm-finetune-for-manufacturing/outputs/` 下的 adapter 权重。
 - **RAGAS 基线指标（faithfulness 0.8750、answer_relevancy 0.8858，3/10 样本）仅反映 rag-agentic-system 在 DashScope API 下的 Agent 问答表现**，与微调实验的训练 loss 或微调前后对比结果无直接关联。
 
-### 9.3 与 industrial-health-demo 的关系
+### 9.3 与 predictive-maintenance-mini 的关系
 
 | 项目 | GitHub | 端口 | 职责 |
 |------|--------|------|------|
 | **rag-agentic-system**（本仓库） | https://github.com/ShihangPENg-afk/rag-agentic-system | 8000 | Agent 编排、RAG、UI、PostgreSQL 日志 |
-| **industrial-health-demo** | https://github.com/ShihangPENg-afk/industrial-health-demo | 8010 | scikit-learn baseline；`/predict` 含 risk_level |
+| **predictive-maintenance-mini** | https://github.com/ShihangPENg-afk/predictive-maintenance-mini | 8010 | scikit-learn baseline；`/predict` 含 risk_level |
 
 联动方式：`check_machine_health` 工具与 Streamlit「设备健康预测」Tab 均通过 HTTP 调用工业 API；两仓库代码与数据库解耦。
 
@@ -308,7 +308,7 @@ make eval-ragas RAGAS_LIMIT=3 RAGAS_METRICS=all RAGAS_TIMEOUT=600
 后续若接入微调模型，大致路径为：
 
 ```text
-llm-finetune-manual 产出 LoRA adapter
+llm-finetune-for-manufacturing 产出 LoRA adapter
         ↓
 rag-agentic-system Agent answer 节点切换为本地推理（或兼容 API 端点）
         ↓

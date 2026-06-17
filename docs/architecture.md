@@ -45,7 +45,7 @@ evaluator ──(need_more_retrieval / next_sub_query)──→ agent
 | `count_tables` | 表格迹象统计（启发式） |
 | `check_machine_health` | 传感器读数、设备健康、产线风险预测 |
 
-`check_machine_health` 通过 HTTP 调用 [industrial-health-demo](https://github.com/ShihangPENg-afk/industrial-health-demo) 的 `POST /predict`（默认 `http://127.0.0.1:8010`），不在本仓库内嵌 ML 模型。
+`check_machine_health` 通过 HTTP 调用 [predictive-maintenance-mini](https://github.com/ShihangPENg-afk/predictive-maintenance-mini) 的 `POST /predict`（默认 `http://127.0.0.1:8010`），不在本仓库内嵌 ML 模型。
 
 ### 3.2 对话 Memory 与 Debug
 
@@ -83,7 +83,7 @@ evaluator ──(need_more_retrieval / next_sub_query)──→ agent
 ## 6. 工业预测服务联动
 
 ```text
-rag-agentic-system (:8000)                    industrial-health-demo (:8010)
+rag-agentic-system (:8000)                    predictive-maintenance-mini (:8010)
   check_machine_health ──HTTP──►     POST /predict
   Streamlit 设备健康 Tab ──HTTP──►  /health · /model-info · /predict
 ```
@@ -98,7 +98,7 @@ rag-agentic-system (:8000)                    industrial-health-demo (:8010)
 |------|------|------|
 | rag-agentic-system API | 8000 | FastAPI + LangGraph |
 | PostgreSQL | 5432 | 元数据与 QA 日志 |
-| industrial-health-demo | 8010 | 独立仓库（[GitHub](https://github.com/ShihangPENg-afk/industrial-health-demo)），Docker 部署 |
+| predictive-maintenance-mini | 8010 | 独立仓库（[GitHub](https://github.com/ShihangPENg-afk/predictive-maintenance-mini)），Docker 部署 |
 | Streamlit UI | 8501 | 宿主机启动 |
 
 Docker Compose（rag-agentic-system 仓库）包含 `postgres` 与 `rag-agentic-system`；工业服务与 Streamlit 需单独启动。双栈验收：`make stack-verify`。

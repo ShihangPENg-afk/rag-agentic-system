@@ -175,7 +175,7 @@ make eval-ragas RAGAS_LIMIT=3 RAGAS_METRICS=all RAGAS_TIMEOUT=600
 - [x] 含 **PostgreSQL 混合持久化**说明（向量 FAISS / 元数据与日志 PG）
 - [x] 含 API 示例（`/upload_pdf/`、`/ask/`、`/ask_rag/`、`/documents/`、`/qa_logs/`）
 - [x] 含 RAGAS 基线结果与报告路径（3/10 样本）
-- [x] 含与 `llm-finetune-manual` 的关系说明（**未接入 LoRA**）
+- [x] 含与 `llm-finetune-for-manufacturing` 的关系说明（**未接入 LoRA**）
 - [x] 含当前限制与后续计划
 
 ---
@@ -290,7 +290,7 @@ curl -fsS http://127.0.0.1:8000/knowledge_bases
 
 ### 模型与评估
 
-- [ ] 接入 `llm-finetune-manual` 产出的 LoRA 微调模型
+- [ ] 接入 `llm-finetune-for-manufacturing` 产出的 LoRA 微调模型
 - [ ] RAGAS 10 条样本完整评估（当前基线仅 3/10 条）
 - [ ] RAGAS 自动化回归（faithfulness 大规模评估仍较慢，易超时）
 
@@ -306,7 +306,7 @@ curl -fsS http://127.0.0.1:8000/knowledge_bases
 
 ---
 
-## 15. 工业预测联动（industrial-health-demo）
+## 15. 工业预测联动（predictive-maintenance-mini）
 
 - [x] `check_machine_health` 工具注册于 Agent（`app/tools/machine_health_tool.py`）
 - [x] HTTP 调用 `HEALTH_API_URL/predict`（默认 `:8010`），无内嵌 ML 模型
@@ -318,7 +318,7 @@ curl -fsS http://127.0.0.1:8000/knowledge_bases
 
 ```bash
 make stack-verify
-# 预期：rag-agentic-system :8000 与 industrial-health :8010 均通过
+# 预期：rag-agentic-system :8000 与 predictive-maintenance-mini :8010 均通过
 ```
 
 ---

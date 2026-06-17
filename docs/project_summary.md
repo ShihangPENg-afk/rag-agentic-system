@@ -7,8 +7,8 @@
 | 仓库 | GitHub |
 |------|--------|
 | rag-agentic-system | https://github.com/ShihangPENg-afk/rag-agentic-system |
-| industrial-health-demo | https://github.com/ShihangPENg-afk/industrial-health-demo |
-| llm-finetune-manual | https://github.com/ShihangPENg-afk/llm-finetune-manual |
+| predictive-maintenance-mini | https://github.com/ShihangPENg-afk/predictive-maintenance-mini |
+| llm-finetune-for-manufacturing | https://github.com/ShihangPENg-afk/llm-finetune-for-manufacturing |
 
 ## 演示视频
 
@@ -40,7 +40,7 @@
 
 ---
 
-## industrial-health-demo（工业预测）
+## predictive-maintenance-mini（工业预测）
 
 独立工业制造质量分类 Demo：EDA → RandomForest 训练 → MLflow → FastAPI → Docker。
 
@@ -55,7 +55,7 @@
 
 ---
 
-## llm-finetune-manual（LoRA 微调）
+## llm-finetune-for-manufacturing（LoRA 微调）
 
 跑通 PDF → Alpaca 数据集（**132** 条）→ LLaMA-Factory LoRA 微调 → 权重保存全流程：以 Qwen2-7B-Instruct 为基座，在本地 CPU 抽样 **50** 条、1 epoch 完成流程验证，产出 adapter 权重。定位为**管线可复现验证**，非可用领域模型；before/after 评测与 GPU 全量训练尚未完成。
 
@@ -64,11 +64,11 @@
 ## 三仓库关系
 
 ```
-rag-agentic-system (:8000)          industrial-health-demo (:8010)
+rag-agentic-system (:8000)          predictive-maintenance-mini (:8010)
   PDF / Agent / PG  ──HTTP──►  传感器 ML 推理
   Streamlit (:8501) ──直连──►  设备健康 Tab
 
-llm-finetune-manual        （独立实验，尚未接入 rag-agentic-system）
+llm-finetune-for-manufacturing        （独立实验，尚未接入 rag-agentic-system）
   PDF → LoRA adapter
 ```
 
@@ -76,7 +76,7 @@ llm-finetune-manual        （独立实验，尚未接入 rag-agentic-system）
 
 ## 核心产出
 
-- **代码：** `rag-agentic-system`、`industrial-health-demo` 双仓库可独立运行与 Docker 部署
+- **代码：** `rag-agentic-system`、`predictive-maintenance-mini` 双仓库可独立运行与 Docker 部署
 - **文档：** [README.md](../README.md)、[ui_demo_guide.md](ui_demo_guide.md)、[industrial_demo_guide.md](industrial_demo_guide.md)、[delivery_checklist.md](delivery_checklist.md)
 - **演示：** 百度网盘 `rag-demo.mp4`（见上表）
 - **验收：** `make smoke`（RAG 主链路）、`make stack-verify`（双服务联动）
