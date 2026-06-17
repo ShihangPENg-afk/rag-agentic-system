@@ -19,7 +19,7 @@ echo "============================================================"
 echo "启动双服务栈"
 echo "============================================================"
 echo "industrial-health-demo: ${INDUSTRIAL_HEALTH_DEMO_DIR}"
-echo "rag-agent             : ${PROJECT_ROOT}"
+echo "rag-agentic-system             : ${PROJECT_ROOT}"
 echo
 
 bash scripts/check_env.sh
@@ -29,7 +29,7 @@ echo "[1/2] 启动 industrial-health-demo (Docker, :8010) ..."
 (cd "${INDUSTRIAL_HEALTH_DEMO_DIR}" && make docker-up)
 
 echo
-echo "[2/2] 启动 rag-agent (Docker, :8000) ..."
+echo "[2/2] 启动 rag-agentic-system (Docker, :8000) ..."
 docker compose up --build -d
 
 echo

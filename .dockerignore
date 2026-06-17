@@ -40,8 +40,3 @@ data/
 evals/out/
 outputs/
 screenshots/
-
-# 本地测试文件
-test.pdf
-test_*.py
-test.py

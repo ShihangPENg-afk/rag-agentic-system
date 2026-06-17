@@ -83,7 +83,7 @@ evaluator ──(need_more_retrieval / next_sub_query)──→ agent
 ## 6. 工业预测服务联动
 
 ```text
-rag-agent (:8000)                    industrial-health-demo (:8010)
+rag-agentic-system (:8000)                    industrial-health-demo (:8010)
   check_machine_health ──HTTP──►     POST /predict
   Streamlit 设备健康 Tab ──HTTP──►  /health · /model-info · /predict
 ```
@@ -96,12 +96,12 @@ rag-agent (:8000)                    industrial-health-demo (:8010)
 
 | 组件 | 端口 | 说明 |
 |------|------|------|
-| rag-agent API | 8000 | FastAPI + LangGraph |
+| rag-agentic-system API | 8000 | FastAPI + LangGraph |
 | PostgreSQL | 5432 | 元数据与 QA 日志 |
 | industrial-health-demo | 8010 | 独立仓库（[GitHub](https://github.com/ShihangPENg-afk/industrial-health-demo)），Docker 部署 |
 | Streamlit UI | 8501 | 宿主机启动 |
 
-Docker Compose（rag-agent 仓库）包含 `postgres` 与 `rag-agent`；工业服务与 Streamlit 需单独启动。双栈验收：`make stack-verify`。
+Docker Compose（rag-agentic-system 仓库）包含 `postgres` 与 `rag-agentic-system`；工业服务与 Streamlit 需单独启动。双栈验收：`make stack-verify`。
 
 ---
 

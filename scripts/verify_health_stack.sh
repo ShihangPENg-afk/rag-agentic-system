@@ -27,19 +27,19 @@ step_fail() {
 }
 
 echo "============================================================"
-echo "双服务联动检查 (rag-agent + industrial-health-demo)"
+echo "双服务联动检查 (rag-agentic-system + industrial-health-demo)"
 echo "============================================================"
 echo "RAG API    : ${RAG_BASE_URL}"
 echo "Health API : ${HEALTH_BASE_URL}"
 echo
 
 if ! curl -fsS "${RAG_BASE_URL}/health" -o /dev/null; then
-  step_fail "rag-agent /health 不可访问"
+  step_fail "rag-agentic-system /health 不可访问"
 fi
-step_ok "rag-agent /health"
+step_ok "rag-agentic-system /health"
 
 if ! RAG_OPENAPI="$(curl -fsS "${RAG_BASE_URL}/openapi.json")"; then
-  step_fail "rag-agent /openapi.json 不可访问"
+  step_fail "rag-agentic-system /openapi.json 不可访问"
 fi
 
 RAG_TITLE="$("${PYTHON_BIN}" -c '
@@ -49,9 +49,9 @@ print(data.get("info", {}).get("title", ""))
 ' "${RAG_OPENAPI}")"
 
 if [ "${RAG_TITLE}" != "RAG PDF 智能问答系统" ]; then
-  step_fail "${RAG_BASE_URL} 不是 rag-agent（当前: ${RAG_TITLE:-未知}）。请停止占用 8000 端口的其他 uvicorn 进程，仅保留 Docker 中的 rag-agent。"
+  step_fail "${RAG_BASE_URL} 不是 rag-agentic-system（当前: ${RAG_TITLE:-未知}）。请停止占用 8000 端口的其他 uvicorn 进程，仅保留 Docker 中的 rag-agentic-system。"
 fi
-step_ok "rag-agent OpenAPI 标题正确"
+step_ok "rag-agentic-system OpenAPI 标题正确"
 
 if ! curl -fsS "${HEALTH_BASE_URL}/health" -o /dev/null; then
   step_fail "industrial-health /health 不可访问（请先 cd ../industrial-health-demo && make docker-up）"

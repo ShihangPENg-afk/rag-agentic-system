@@ -1,7 +1,7 @@
-# rag-agent 项目总结报告
+# rag-agentic-system 项目总结报告
 
 > 报告日期：2026-06-10  
-> 项目仓库：https://github.com/ShihangPENg-afk/rag-agent  
+> 项目仓库：https://github.com/ShihangPENg-afk/rag-agentic-system  
 > 相关文档：[architecture.md](architecture.md) · [README.md](../README.md)
 
 ---
@@ -141,7 +141,7 @@ history 指代增强 → FAISS 检索 → Prompt 组装 → DashScope 生成
 | 文件 | 说明 |
 |------|------|
 | `Dockerfile` | 基于 `python:3.10-slim`，安装 `libgomp1`（FAISS 依赖），CMD 为 uvicorn |
-| `docker-compose.yml` | `postgres:16-alpine` + `rag-agent` 服务，端口 5432 / 8000，挂载 `.env`、`data/`、`evals/out/` |
+| `docker-compose.yml` | `postgres:16-alpine` + `rag-agentic-system` 服务，端口 5432 / 8000，挂载 `.env`、`data/`、`evals/out/` |
 | `.dockerignore` | 排除 `.venv`、`.env`、`data/`、`evals/out/` 等本地文件 |
 
 ### 4.2 验收操作与结果
@@ -153,8 +153,8 @@ make docker-up          # docker compose up --build -d
 
 | 验收项 | 结果 |
 |--------|------|
-| 镜像构建 | 通过（`rag-agent-rag-agent:latest`） |
-| 容器启动 | 通过（容器名 `rag-agent`） |
+| 镜像构建 | 通过（`rag-agentic-system-rag-agentic-system:latest`） |
+| 容器启动 | 通过（容器名 `rag-agentic-system`） |
 | 端口映射 | `8000:8000` 正常 |
 | healthcheck | 已配置，探测 `GET /health`（间隔 30s，启动宽限 40s） |
 | API 文档可达 | 通过（`/openapi.json` 可访问） |
@@ -284,21 +284,21 @@ make eval-ragas RAGAS_LIMIT=3 RAGAS_METRICS=all RAGAS_TIMEOUT=600
 
 | 项目 | GitHub | 职责 |
 |------|--------|------|
-| **rag-agent**（本仓库） | https://github.com/ShihangPENg-afk/rag-agent | Agentic RAG 问答服务：PDF 上传、FAISS 检索、LangGraph Agent、RAGAS 评估、Docker 部署 |
+| **rag-agentic-system**（本仓库） | https://github.com/ShihangPENg-afk/rag-agentic-system | Agentic RAG 问答服务：PDF 上传、FAISS 检索、LangGraph Agent、RAGAS 评估、Docker 部署 |
 | **llm-finetune-manual** | https://github.com/ShihangPENg-afk/llm-finetune-manual | 独立微调实验：PDF → Alpaca 数据集 → Qwen2-7B LoRA CPU 微调验证 |
 
 ### 9.2 关系边界
 
 - 两个仓库**代码独立、依赖独立、部署独立**，不存在代码引用或共享运行时。
 - 二者在业务上同属「PDF 技术手册知识处理」链路的不同阶段：微调仓库解决「如何让模型更懂手册内容」，本仓库解决「如何基于手册内容进行可检索、可推理的问答」。
-- **当前 LoRA 微调模型尚未接入 rag-agent**。本仓库的 Agent 生成节点与 RAGAS 评估均调用 DashScope 在线 API，未加载 `llm-finetune-manual/outputs/` 下的 adapter 权重。
-- **RAGAS 基线指标（faithfulness 0.8750、answer_relevancy 0.8858，3/10 样本）仅反映 rag-agent 在 DashScope API 下的 Agent 问答表现**，与微调实验的训练 loss 或微调前后对比结果无直接关联。
+- **当前 LoRA 微调模型尚未接入 rag-agentic-system**。本仓库的 Agent 生成节点与 RAGAS 评估均调用 DashScope 在线 API，未加载 `llm-finetune-manual/outputs/` 下的 adapter 权重。
+- **RAGAS 基线指标（faithfulness 0.8750、answer_relevancy 0.8858，3/10 样本）仅反映 rag-agentic-system 在 DashScope API 下的 Agent 问答表现**，与微调实验的训练 loss 或微调前后对比结果无直接关联。
 
 ### 9.3 与 industrial-health-demo 的关系
 
 | 项目 | GitHub | 端口 | 职责 |
 |------|--------|------|------|
-| **rag-agent**（本仓库） | https://github.com/ShihangPENg-afk/rag-agent | 8000 | Agent 编排、RAG、UI、PostgreSQL 日志 |
+| **rag-agentic-system**（本仓库） | https://github.com/ShihangPENg-afk/rag-agentic-system | 8000 | Agent 编排、RAG、UI、PostgreSQL 日志 |
 | **industrial-health-demo** | https://github.com/ShihangPENg-afk/industrial-health-demo | 8010 | scikit-learn baseline；`/predict` 含 risk_level |
 
 联动方式：`check_machine_health` 工具与 Streamlit「设备健康预测」Tab 均通过 HTTP 调用工业 API；两仓库代码与数据库解耦。
@@ -310,7 +310,7 @@ make eval-ragas RAGAS_LIMIT=3 RAGAS_METRICS=all RAGAS_TIMEOUT=600
 ```text
 llm-finetune-manual 产出 LoRA adapter
         ↓
-rag-agent Agent answer 节点切换为本地推理（或兼容 API 端点）
+rag-agentic-system Agent answer 节点切换为本地推理（或兼容 API 端点）
         ↓
 重新运行 RAGAS，与当前 DashScope 基线对比
 ```

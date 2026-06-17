@@ -2,27 +2,26 @@
 
 > 更新日期：2026-06-15 · 关联文档：[README.md](../README.md) · [architecture.md](architecture.md) · [industrial_demo_guide.md](industrial_demo_guide.md)
 
-围绕 **PDF 知识处理** 与 **工业设备健康预测**，维护三个**相关但解耦**的独立 GitHub 仓库（见下表）。代码、依赖与部署互不引用；**LoRA 权重尚未接入 rag-agent**，问答生成仍调用 DashScope 在线 API（`qwen-plus`）。
+围绕 **PDF 知识处理** 与 **工业设备健康预测**，维护三个**相关但解耦**的独立 GitHub 仓库（见下表）。代码、依赖与部署互不引用；**LoRA 权重尚未接入 rag-agentic-system**，问答生成仍调用 DashScope 在线 API（`qwen-plus`）。
 
 | 仓库 | GitHub |
 |------|--------|
-| rag-agent | https://github.com/ShihangPENg-afk/rag-agent |
+| rag-agentic-system | https://github.com/ShihangPENg-afk/rag-agentic-system |
 | industrial-health-demo | https://github.com/ShihangPENg-afk/industrial-health-demo |
 | llm-finetune-manual | https://github.com/ShihangPENg-afk/llm-finetune-manual |
 
 ## 演示视频
 
-| 项 | 内容 |
-|----|------|
-| 文件 | `rag-demo.mp4` |
-| 链接 | https://pan.baidu.com/s/1G3FDGbw7h37hDuddjUFpRg |
-| 提取码 | `iqcq` |
+| 平台 | 内容 |
+|------|------|
+| **百度网盘** | 文件 `rag-demo.mp4` · [链接](https://pan.baidu.com/s/1G3FDGbw7h37hDuddjUFpRg) · 提取码 `iqcq` |
+| **文字版 Demo** | 见 [ui_demo_guide.md](ui_demo_guide.md) 与 [industrial_demo_guide.md](industrial_demo_guide.md) |
 
 涵盖 PDF 上传问答、Debug Trace、PostgreSQL 历史记录、设备健康预测 Tab 及 Agent 调用 `check_machine_health`。
 
 ---
 
-## rag-agent（Agentic RAG + Agent 工具集成）
+## rag-agentic-system（Agentic RAG + Agent 工具集成）
 
 基于 **FastAPI + LangGraph + FAISS + PostgreSQL + Streamlit + DashScope**，实现 PDF 上传 → 切块向量化 → Agent 问答，并通过 HTTP 联动工业预测服务：
 
@@ -52,7 +51,7 @@
 | 推理 API | `:8010` — `/health`、`/model-info`、`POST /predict`（含 `prediction`、`risk_level`、`recommendation`） |
 | 容器化 | `make docker-up` / `make docker-verify` |
 
-**定位：** 传统 ML baseline，演示「能训练、能服务化、能 Docker 化」，**非生产级模型**。rag-agent 通过 HTTP 调用，不内嵌训练或模型文件。
+**定位：** 传统 ML baseline，演示「能训练、能服务化、能 Docker 化」，**非生产级模型**。rag-agentic-system 通过 HTTP 调用，不内嵌训练或模型文件。
 
 ---
 
@@ -65,11 +64,11 @@
 ## 三仓库关系
 
 ```
-rag-agent (:8000)          industrial-health-demo (:8010)
+rag-agentic-system (:8000)          industrial-health-demo (:8010)
   PDF / Agent / PG  ──HTTP──►  传感器 ML 推理
   Streamlit (:8501) ──直连──►  设备健康 Tab
 
-llm-finetune-manual        （独立实验，尚未接入 rag-agent）
+llm-finetune-manual        （独立实验，尚未接入 rag-agentic-system）
   PDF → LoRA adapter
 ```
 
@@ -77,7 +76,7 @@ llm-finetune-manual        （独立实验，尚未接入 rag-agent）
 
 ## 核心产出
 
-- **代码：** `rag-agent`、`industrial-health-demo` 双仓库可独立运行与 Docker 部署
+- **代码：** `rag-agentic-system`、`industrial-health-demo` 双仓库可独立运行与 Docker 部署
 - **文档：** [README.md](../README.md)、[ui_demo_guide.md](ui_demo_guide.md)、[industrial_demo_guide.md](industrial_demo_guide.md)、[delivery_checklist.md](delivery_checklist.md)
 - **演示：** 百度网盘 `rag-demo.mp4`（见上表）
 - **验收：** `make smoke`（RAG 主链路）、`make stack-verify`（双服务联动）

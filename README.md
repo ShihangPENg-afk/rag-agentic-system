@@ -1,4 +1,6 @@
-# rag-agent
+# rag-agentic-system
+
+> **English version:** [README.en.md](README.en.md)
 
 基于 **Agentic RAG** 的 PDF 智能问答系统，并集成 **工业设备健康预测** 能力：上传 PDF 后自动切块、向量化并建立 FAISS 索引，通过 LangGraph Agent 进行工具调用、多步推理与对话记忆；同时通过 `check_machine_health` 工具 HTTP 调用独立工业预测服务，实现「文档问答 + 传感器风险预测」双链路编排。
 
@@ -12,25 +14,24 @@
 
 | 仓库 | GitHub | 说明 |
 |------|--------|------|
-| **rag-agent** | https://github.com/ShihangPENg-afk/rag-agent | 本仓库：Agentic RAG、Streamlit、PostgreSQL |
+| **rag-agentic-system** | https://github.com/ShihangPENg-afk/rag-agentic-system | 本仓库：Agentic RAG、Streamlit、PostgreSQL |
 | **industrial-health-demo** | https://github.com/ShihangPENg-afk/industrial-health-demo | 工业 ML 训练与推理 API（`:8010`） |
 | **llm-finetune-manual** | https://github.com/ShihangPENg-afk/llm-finetune-manual | LoRA 微调实验（**尚未接入**本仓库） |
 
-三个仓库**代码与部署相互独立**。本地双服务联调时，请将上述仓库 clone 到**同级目录**（例如 `pythonProject1/rag-agent` 与 `pythonProject1/industrial-health-demo` 并列），详见 [4.1 双服务联动](#41-双服务联动rag-agent--industrial-health-demo)。
+三个仓库**代码与部署相互独立**。本地双服务联调时，请将上述仓库 clone 到**同级目录**（例如 `pythonProject1/rag-agentic-system` 与 `pythonProject1/industrial-health-demo` 并列），详见 [4.1 双服务联动](#41-双服务联动rag-agentic-system--industrial-health-demo)。
 
 ---
 
 ## 视频演示
 
-完整功能演示视频（PDF 问答、Debug Trace、PostgreSQL 历史、设备健康预测 Tab、Agent 调用 `check_machine_health`）可通过百度网盘观看：
+完整功能演示视频（PDF 问答、Debug Trace、PostgreSQL 历史、设备健康预测 Tab、Agent 调用 `check_machine_health`）：
 
-| 项 | 内容 |
-|----|------|
-| 文件 | `rag-demo.mp4` |
-| 链接 | https://pan.baidu.com/s/1G3FDGbw7h37hDuddjUFpRg |
-| 提取码 | `iqcq` |
+| 平台 | 内容 |
+|------|------|
+| **百度网盘** | 文件 `rag-demo.mp4` · [链接](https://pan.baidu.com/s/1G3FDGbw7h37hDuddjUFpRg) · 提取码 `iqcq` |
+| **文字版 Demo（无需视频）** | 海外或无法访问网盘时，请按 [docs/ui_demo_guide.md](docs/ui_demo_guide.md) 与 [docs/industrial_demo_guide.md](docs/industrial_demo_guide.md) 逐步复现 |
 
-> 视频为端到端演示录屏。如需逐步操作，可参考 [docs/ui_demo_guide.md](docs/ui_demo_guide.md)（PDF 问答）与 [docs/industrial_demo_guide.md](docs/industrial_demo_guide.md)（工业预测联动）。
+> 视频为端到端演示录屏；文字指南与视频覆盖相同能力，适合国际访问者与 CI 环境外的本地验收。
 
 ---
 
@@ -85,7 +86,7 @@
 | 向量检索 | **FAISS**、NumPy（进程内，**不写入 PostgreSQL**） |
 | 元数据 / 日志 | **PostgreSQL 16**、SQLAlchemy（`documents`、`qa_logs` 表） |
 | 大模型 / 向量 | **DashScope**（`qwen-plus`、TextEmbedding），通过 **OpenAI-compatible API** 调用 |
-| 容器化 | **Docker**、**Docker Compose**（`rag-agent` + `postgres`；工业服务见 sibling 仓库） |
+| 容器化 | **Docker**、**Docker Compose**（`rag-agentic-system` + `postgres`；工业服务见 sibling 仓库） |
 | 工业预测（外部） | **[industrial-health-demo](https://github.com/ShihangPENg-afk/industrial-health-demo)**：scikit-learn、FastAPI `:8010`（本仓库通过 HTTP 调用） |
 | 质量评估 | **RAGAS**（`Faithfulness`、`ResponseRelevancy`） |
 | 文本处理 | pypdf、langchain-text-splitters |
@@ -109,7 +110,7 @@
                               ↓
                     qa_logs 表（问答历史 + 可选 debug JSON）
 
-Streamlit UI（:8501）──┬── API_BASE_URL → rag-agent :8000（PDF / 聊天 / Debug）
+Streamlit UI（:8501）──┬── API_BASE_URL → rag-agentic-system :8000（PDF / 聊天 / Debug）
                        └── HEALTH_API_URL → industrial-health-demo :8010（设备健康 Tab 直连）
 
                     POST /ask_rag/（经典 RAG，回退）
@@ -131,7 +132,7 @@ Streamlit UI（:8501）──┬── API_BASE_URL → rag-agent :8000（PDF / 
 ### 0. 克隆仓库（首次）
 
 ```bash
-git clone https://github.com/ShihangPENg-afk/rag-agent.git
+git clone https://github.com/ShihangPENg-afk/rag-agentic-system.git
 # 双服务联调时，将 industrial-health-demo 克隆到同级目录：
 git clone https://github.com/ShihangPENg-afk/industrial-health-demo.git
 # LoRA 实验为独立仓库（可选）：
@@ -141,7 +142,7 @@ git clone https://github.com/ShihangPENg-afk/llm-finetune-manual.git
 ### 1. 安装依赖
 
 ```bash
-cd rag-agent
+cd rag-agentic-system
 make install          # 创建 .venv 并安装 requirements.txt
 # 或手动：
 python -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt
@@ -220,20 +221,20 @@ streamlit run ui/streamlit_app.py
 
 UI 主要能力：PDF 上传与向量库构建、多轮 Agent 问答、Debug Trace 可视化、「历史记录」页查看 PostgreSQL 中的 QA 日志、**「设备健康预测」** Tab 调用工业健康 API。演示步骤见 [docs/ui_demo_guide.md](docs/ui_demo_guide.md) 与 [docs/industrial_demo_guide.md](docs/industrial_demo_guide.md)。
 
-### 4.1 双服务联动（rag-agent + industrial-health-demo）
+### 4.1 双服务联动（rag-agentic-system + industrial-health-demo）
 
-两个仓库通过 **HTTP 松耦合**：rag-agent 占 **8000**，industrial-health-demo 占 **8010**，互不共用进程或数据库。
+两个仓库通过 **HTTP 松耦合**：rag-agentic-system 占 **8000**，industrial-health-demo 占 **8010**，互不共用进程或数据库。
 
 | 服务 | 端口 | 职责 |
 |------|------|------|
-| **rag-agent** | `8000` | PDF 上传、Agent 问答、PostgreSQL 元数据 |
+| **rag-agentic-system** | `8000` | PDF 上传、Agent 问答、PostgreSQL 元数据 |
 | **industrial-health-demo** | `8010` | 传感器特征 → 设备健康分类（`/health`、`/model-info`、`/predict`） |
 
 **一键启动双服务栈**（需同级目录存在 `../industrial-health-demo`）：
 
 ```bash
-# rag-agent 仓库内
-make stack-up          # 先起 industrial-health-demo Docker，再起 rag-agent Docker
+# rag-agentic-system 仓库内
+make stack-up          # 先起 industrial-health-demo Docker，再起 rag-agentic-system Docker
 make stack-verify      # 验证 8000 + 8010 均正常
 ```
 
@@ -246,8 +247,8 @@ make docker-up         # 若缺 model.pkl 会先 train
 sleep 5                # 等待 uvicorn 加载模型后再 verify
 make docker-verify     # curl /health /model-info + 样例 /predict
 
-# 终端 B — rag-agent
-cd ../rag-agent
+# 终端 B — rag-agentic-system
+cd ../rag-agentic-system
 make env-check && make docker-up
 make stack-verify
 ```
@@ -255,7 +256,7 @@ make stack-verify
 **启动 Streamlit UI**（终端 C）：
 
 ```bash
-cd rag-agent
+cd rag-agentic-system
 source .venv/bin/activate
 pip install -r ui/requirements-ui.txt
 export API_BASE_URL=http://127.0.0.1:8000
@@ -266,11 +267,11 @@ make ui
 
 在 UI 中：
 
-- **侧边栏** `API_BASE_URL` → rag-agent（PDF / 聊天 / Debug Trace）
+- **侧边栏** `API_BASE_URL` → rag-agentic-system（PDF / 聊天 / Debug Trace）
 - **「设备健康预测」Tab** `HEALTH_API_URL` → industrial-health-demo（默认 `http://127.0.0.1:8010`）
 - 点击「获取模型信息」加载特征字段 → 输入传感器参数 →「预测设备健康状态」
 
-> **端口冲突注意**：不要在宿主机用 `uvicorn ... --port 8000` 启动 industrial-health-demo；该服务应仅监听 **8010**（Docker 已配置）。若 `make smoke` 报「指向了错误的服务」，说明 8000 被其他进程占用，停止后仅保留 rag-agent 容器即可。
+> **端口冲突注意**：不要在宿主机用 `uvicorn ... --port 8000` 启动 industrial-health-demo；该服务应仅监听 **8010**（Docker 已配置）。若 `make smoke` 报「指向了错误的服务」，说明 8000 被其他进程占用，停止后仅保留 rag-agentic-system 容器即可。
 
 > **Docker 内调用工业 API**：`docker-compose.yml` 中 `HEALTH_API_URL` 默认为 `http://host.docker.internal:8010`（适用于 Docker Desktop / macOS）。在 **Linux** 上若 Agent 容器无法访问宿主机 `:8010`，需在 compose 中增加 `extra_hosts: ["host.docker.internal:host-gateway"]`，或改为宿主机局域网 IP。
 
@@ -283,7 +284,7 @@ make docker-up          # 后台构建并启动
 docker compose up --build
 ```
 
-启动后访问 [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)。Compose 会同时拉起 `postgres`（端口 `5432`）与 `rag-agent`（端口 `8000`），并通过 `DATABASE_URL` 将 API 服务指向数据库容器。
+启动后访问 [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)。Compose 会同时拉起 `postgres`（端口 `5432`）与 `rag-agentic-system`（端口 `8000`），并通过 `DATABASE_URL` 将 API 服务指向数据库容器。
 
 > **FAISS 向量索引**仍在 API 进程内存中，容器重启后需重新上传 PDF 才能问答；**PostgreSQL** 中的文档元信息与 QA 日志会保留。
 
@@ -378,7 +379,7 @@ curl -X POST "http://127.0.0.1:8000/ask_rag/" \
 
 ### 设备健康预测 — Agent 触发 `check_machine_health`
 
-需先 `make smoke` 或上传 PDF 获得 `knowledge_base_id`；工业 API 需已在 `:8010` 运行（见 [4.1 双服务联动](#41-双服务联动rag-agent--industrial-health-demo)）。
+需先 `make smoke` 或上传 PDF 获得 `knowledge_base_id`；工业 API 需已在 `:8010` 运行（见 [4.1 双服务联动](#41-双服务联动rag-agentic-system--industrial-health-demo)）。
 
 ```bash
 curl -X POST "http://127.0.0.1:8000/ask/" \
@@ -412,6 +413,8 @@ curl -X POST "http://127.0.0.1:8000/ask/" \
 使用 [RAGAS](https://docs.ragas.io/) 对 Agent 问答质量进行离线评估。样本文件 `evals/ragas_samples.json` 含 **10 条手工样本**（问题 + 参考答案）；脚本先逐条调用 Agent 生成回答，再交给 RAGAS 打分。
 
 ### 基线评估结果（`test.pdf`，2026-06-10，3/10 样本）
+
+> 完整样本与复现说明见 [docs/ragas_baseline.md](docs/ragas_baseline.md)。
 
 运行配置：`RAGAS_LIMIT=3`、`RAGAS_METRICS=all`、`RAGAS_TIMEOUT=600`
 
@@ -450,8 +453,9 @@ python evals/run_ragas_eval.py \
 
 | 文件 | 内容 |
 |------|------|
-| `evals/out/ragas_report.json` | `summary`、`samples`（逐条 question / reference / answer）、`eval_config` |
-| `evals/out/ragas_report.md` | 同上，Markdown 可读版本 |
+| `docs/ragas_baseline.md` | 已入库的基线快照（分数 + 样本摘要 + 复现命令） |
+| `evals/out/ragas_report.json` | 本地运行生成的完整 JSON（`evals/out/` 未纳入 Git） |
+| `evals/out/ragas_report.md` | 本地运行生成的 Markdown 报告 |
 
 > `make eval-ragas` 默认仅跑 `relevancy` 单指标以避免超时；**正式基线以 `metrics=all` 报告为准**。`faithfulness` 评估调用 LLM 判分，耗时明显长于 `answer_relevancy`。
 
@@ -463,7 +467,7 @@ python evals/run_ragas_eval.py \
 
 | 项目 | 端口 | 职责 |
 |------|------|------|
-| **rag-agent**（本仓库） | `8000` | PDF 问答、Agent 编排、PostgreSQL 日志、Streamlit |
+| **rag-agentic-system**（本仓库） | `8000` | PDF 问答、Agent 编排、PostgreSQL 日志、Streamlit |
 | **industrial-health-demo** | `8010` | `/health`、`/model-info`、`POST /predict`（含 `risk_level`） |
 
 **联动方式：**
@@ -486,14 +490,14 @@ make docker-up && make docker-verify   # 无 make run；Docker 映射 :8010
 
 | 项目 | 职责 | 当前状态 |
 |------|------|----------|
-| **rag-agent**（本仓库） | Agentic RAG 问答、工业工具集成、RAGAS 评估 | 工程化 POC 演示 |
+| **rag-agentic-system**（本仓库） | Agentic RAG 问答、工业工具集成、RAGAS 评估 | 工程化 POC 演示 |
 | **industrial-health-demo** | 工业 ML 训练与推理 API | 独立服务，HTTP 联动 |
 | **llm-finetune-manual** | PDF → Alpaca 数据集 → LoRA 微调 | 独立实验，已完成 CPU 微调验证 |
 
 **LoRA 与 RAGAS：**
 
-- **当前 LoRA 微调模型尚未接入 rag-agent**；问答生成仍使用 DashScope 在线 API（`qwen-plus`）。
-- **RAGAS 基线（faithfulness 0.8750、answer_relevancy 0.8858）仅属于 rag-agent**，与微调实验无关。
+- **当前 LoRA 微调模型尚未接入 rag-agentic-system**；问答生成仍使用 DashScope 在线 API（`qwen-plus`）。
+- **RAGAS 基线（faithfulness 0.8750、answer_relevancy 0.8858）仅属于 rag-agentic-system**，与微调实验无关。快照见 [docs/ragas_baseline.md](docs/ragas_baseline.md)。
 
 ---
 
@@ -516,18 +520,21 @@ make docker-up && make docker-verify   # 无 make run；Docker 映射 :8010
 - [ ] **FAISS / 向量持久化** — 将 FAISS 索引落盘或接入专用向量数据库，支持重启后无需重新上传即可问答
 - [ ] **接入微调模型** — 将 [llm-finetune-manual](https://github.com/ShihangPENg-afk/llm-finetune-manual) 产出的 LoRA 权重接入 Agent 生成节点（**尚未接入**）
 - [ ] **增加评估样本** — 扩充 `evals/ragas_samples.json`，覆盖多跳推理与结构类问题
-- [ ] **增加 CI/CD** — 在流水线中自动运行 Smoke Test 与 RAGAS 基线对比
+- [x] **CI 基础流水线** — GitHub Actions 运行离线单元测试与编译检查（见 `.github/workflows/ci.yml`）
+- [ ] **Smoke / RAGAS 接入 CI** — 需 DashScope Key 的端到端与评估流水线
 
 ---
 
 ## 项目结构
 
 ```
-rag-agent/
+rag-agentic-system/
 ├── main.py                      # 服务启动入口
 ├── config.py                    # 全局配置
 ├── Makefile                     # run / docker-up / smoke / eval-ragas
 ├── Dockerfile / docker-compose.yml
+├── LICENSE                      # MIT License
+├── README.md / README.en.md     # 中文 / 英文说明
 ├── app/
 │   ├── api/routes.py            # HTTP 路由
 │   ├── agent/                   # LangGraph 状态图与节点
@@ -541,7 +548,9 @@ rag-agent/
 ├── evals/
 │   ├── run_ragas_eval.py        # RAGAS 评估脚本
 │   ├── ragas_samples.json       # 评估样本
-│   └── out/                     # 评估报告输出
+│   └── out/                     # 本地评估报告输出（gitignore）
+├── tests/
+│   └── test_offline.py          # 离线单元测试（CI 使用）
 ├── scripts/
 │   ├── smoke_test.sh            # 端到端冒烟测试
 │   ├── verify_health_stack.sh   # 双服务联动检查（8000 + 8010）
@@ -551,6 +560,9 @@ rag-agent/
 └── docs/
     ├── architecture.md          # 详细架构说明
     ├── delivery_checklist.md    # 功能验收清单
+    ├── final_report.md          # 项目总结报告
+    ├── project_summary.md       # 三仓库生态总览
+    ├── ragas_baseline.md        # RAGAS 基线快照
     ├── industrial_demo_guide.md # 工业预测联动演示
     └── ui_demo_guide.md         # UI 录屏演示步骤
 ```
@@ -562,7 +574,7 @@ make help             # 查看所有命令
 make run              # 本地启动 FastAPI (:8000)
 make docker-up        # Docker 后台启动（API + PostgreSQL）
 make docker-down      # 停止容器
-make stack-up         # 启动 rag-agent + industrial-health-demo 双栈
+make stack-up         # 启动 rag-agentic-system + industrial-health-demo 双栈
 make stack-verify     # 验证 :8000 与 :8010 均正常
 make smoke            # 端到端冒烟测试（4/4）
 make eval-ragas       # RAGAS 评估
@@ -576,4 +588,4 @@ pip install -r ui/requirements-ui.txt && streamlit run ui/streamlit_app.py
 
 ## License
 
-未指定开源协议时，请按项目所有者要求使用与分发。
+本项目采用 [MIT License](LICENSE) 开源。

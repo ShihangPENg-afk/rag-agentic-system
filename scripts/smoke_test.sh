@@ -80,7 +80,7 @@ if title != "RAG PDF 智能问答系统":
     raise SystemExit(1)
 ' 2>/tmp/rag_smoke_title.err; then
     WRONG_TITLE="$(cat /tmp/rag_smoke_title.err 2>/dev/null || echo '未知服务')"
-    step_fail "BASE_URL 指向了错误的服务（${WRONG_TITLE}）。请停止占用 8000 端口的其他进程，仅保留 rag-agent Docker 容器，或使用 make stack-up 启动双服务栈。"
+    step_fail "BASE_URL 指向了错误的服务（${WRONG_TITLE}）。请停止占用 8000 端口的其他进程，仅保留 rag-agentic-system Docker 容器，或使用 make stack-up 启动双服务栈。"
   fi
 fi
 

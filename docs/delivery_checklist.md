@@ -1,4 +1,4 @@
-# rag-agent 验收清单
+# rag-agentic-system 验收清单
 
 > 最后核对：2026-06-11  
 > 关联文档：[final_report.md](final_report.md) · [README.md](../README.md) · [ui_demo_guide.md](ui_demo_guide.md)
@@ -37,9 +37,9 @@ make install && make env-check && make run
 ## 2. Docker 运行
 
 - [x] `Dockerfile` 存在（`python:3.10-slim` + `libgomp1` + uvicorn）
-- [x] `docker-compose.yml` 存在（`rag-agent` + `postgres:16-alpine`）
+- [x] `docker-compose.yml` 存在（`rag-agentic-system` + `postgres:16-alpine`）
 - [x] API 端口 `8000:8000`，PostgreSQL 端口 `5432:5432`
-- [x] `rag-agent` 通过 `DATABASE_URL` 连接 `postgres` 服务（`depends_on` + healthcheck）
+- [x] `rag-agentic-system` 通过 `DATABASE_URL` 连接 `postgres` 服务（`depends_on` + healthcheck）
 - [x] `make docker-up` 可构建镜像并后台启动容器
 - [x] `make docker-down` / `make docker-logs` 可用
 - [x] 容器 healthcheck 探测 `GET /health`
@@ -49,7 +49,7 @@ make install && make env-check && make run
 ```bash
 make env-check && make docker-up
 curl -fsS http://127.0.0.1:8000/health
-docker compose ps   # postgres 与 rag-agent 均为 healthy / running
+docker compose ps   # postgres 与 rag-agentic-system 均为 healthy / running
 ```
 
 **已知约束：** **FAISS 向量索引**在 API 进程内存中，容器重启后需重新上传 PDF 才能问答；**PostgreSQL** 中的 `documents` / `qa_logs` 记录会保留。
@@ -318,14 +318,14 @@ curl -fsS http://127.0.0.1:8000/knowledge_bases
 
 ```bash
 make stack-verify
-# 预期：rag-agent :8000 与 industrial-health :8010 均通过
+# 预期：rag-agentic-system :8000 与 industrial-health :8010 均通过
 ```
 
 ---
 
 ## 签收参考
 
-全部核心勾选项（含 PostgreSQL 混合持久化、Streamlit UI、工业预测联动）满足后，可认为 rag-agent **当前版本功能验收通过**。「当前未完成项」所列能力作为后续迭代 backlog；**LoRA 微调模型尚未接入 rag-agent**，不影响当前 POC 验收结论。
+全部核心勾选项（含 PostgreSQL 混合持久化、Streamlit UI、工业预测联动）满足后，可认为 rag-agentic-system **当前版本功能验收通过**。「当前未完成项」所列能力作为后续迭代 backlog；**LoRA 微调模型尚未接入 rag-agentic-system**，不影响当前 POC 验收结论。
 
 **推荐最终验收顺序：**
 

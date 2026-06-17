@@ -1,11 +1,11 @@
-# rag-agent Makefile
+# rag-agentic-system Makefile
 # ---------------------------------------------------------------------------
 # 变量
 # ---------------------------------------------------------------------------
 PYTHON        := .venv/bin/python
 PIP           := .venv/bin/pip
 COMPOSE       := docker compose
-SERVICE       := rag-agent
+SERVICE       := rag-agentic-system
 
 PDF           ?= test.pdf
 BASE_URL      ?= http://127.0.0.1:8000
@@ -26,7 +26,7 @@ RAGAS_SAMPLES := evals/ragas_samples.json
         run \
         docker-up docker-down docker-logs \
         health-up stack-up stack-verify ui \
-        test-agent test-retrieval test-doc-tools smoke \
+        test test-agent test-retrieval test-doc-tools smoke \
         eval-ragas
 
 .DEFAULT_GOAL := help
@@ -80,10 +80,10 @@ health-up: ## 启动 industrial-health-demo Docker 服务 (:8010)
 	@test -d "$(INDUSTRIAL_HEALTH_DEMO_DIR)" || (echo "❌ 未找到 $(INDUSTRIAL_HEALTH_DEMO_DIR)，请设置 INDUSTRIAL_HEALTH_DEMO_DIR"; exit 1)
 	$(MAKE) -C "$(INDUSTRIAL_HEALTH_DEMO_DIR)" docker-up
 
-stack-up: env-check ## 启动 rag-agent + industrial-health-demo 双服务栈
+stack-up: env-check ## 启动 rag-agentic-system + industrial-health-demo 双服务栈
 	bash scripts/start_stack.sh
 
-stack-verify: ## 验证 rag-agent (:8000) 与 industrial-health-demo (:8010)
+stack-verify: ## 验证 rag-agentic-system (:8000) 与 industrial-health-demo (:8010)
 	bash scripts/verify_health_stack.sh $(BASE_URL) $(HEALTH_API_URL)
 
 ui: ## 启动 Streamlit UI（需后端已运行）
@@ -92,6 +92,9 @@ ui: ## 启动 Streamlit UI（需后端已运行）
 # ---------------------------------------------------------------------------
 # 测试
 # ---------------------------------------------------------------------------
+test: ## 运行离线单元测试（无需 DashScope Key，CI 同款）
+	PYTHONPATH=. $(PYTHON) -m pytest tests/ -v
+
 test-agent: ## 运行 LangGraph Agent 本地测试
 	$(PYTHON) test_langgraph_agent.py $(PDF)
 
