@@ -11,7 +11,7 @@ PDF           ?= test.pdf
 BASE_URL      ?= http://127.0.0.1:8000
 SMOKE_SCRIPT  := scripts/smoke_test.sh
 
-INDUSTRIAL_HEALTH_DEMO_DIR ?= ../predictive-maintenance-mini
+PREDICTIVE_MAINTENANCE_MINI_DIR ?= ../predictive-maintenance-mini
 HEALTH_API_URL            ?= http://127.0.0.1:8010
 
 RAGAS_LIMIT   ?= 3
@@ -77,8 +77,8 @@ docker-logs: ## 跟踪 Docker 服务日志
 	$(COMPOSE) logs -f $(SERVICE)
 
 health-up: ## 启动 predictive-maintenance-mini Docker 服务 (:8010)
-	@test -d "$(INDUSTRIAL_HEALTH_DEMO_DIR)" || (echo "❌ 未找到 $(INDUSTRIAL_HEALTH_DEMO_DIR)，请设置 INDUSTRIAL_HEALTH_DEMO_DIR"; exit 1)
-	$(MAKE) -C "$(INDUSTRIAL_HEALTH_DEMO_DIR)" docker-up
+	@test -d "$(PREDICTIVE_MAINTENANCE_MINI_DIR)" || (echo "❌ 未找到 $(PREDICTIVE_MAINTENANCE_MINI_DIR)，请设置 PREDICTIVE_MAINTENANCE_MINI_DIR"; exit 1)
+	$(MAKE) -C "$(PREDICTIVE_MAINTENANCE_MINI_DIR)" docker-up
 
 stack-up: env-check ## 启动 rag-agentic-system + predictive-maintenance-mini 双服务栈
 	bash scripts/start_stack.sh
