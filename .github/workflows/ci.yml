@@ -9,6 +9,8 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      DASHSCOPE_API_KEY: ci-placeholder-not-used
     steps:
       - uses: actions/checkout@v4
 
@@ -25,8 +27,6 @@ jobs:
           pip install -r requirements-dev.txt
 
       - name: Compile Python sources
-        env:
-          DASHSCOPE_API_KEY: ci-placeholder-not-used
         run: python -m compileall app utils main.py config.py rag.py
 
       - name: Run offline unit tests
