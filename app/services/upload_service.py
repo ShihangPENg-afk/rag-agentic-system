@@ -1,7 +1,7 @@
 import uuid
 
-from rag import RAGSystem
-from app.db.repository import record_document
+from app.repositories.document_repository import record_document
+from app.services.rag_service import RAGSystem
 from app.services.kb_registry import register_knowledge_base
 
 

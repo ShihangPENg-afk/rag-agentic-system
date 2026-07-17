@@ -20,7 +20,7 @@ try:
 except ImportError:
     from ragas.metrics import Faithfulness, ResponseRelevancy
 
-from config import API_KEY, DASHSCOPE_BASE_URL, MODEL_NAME
+from app.core.config import API_KEY, DASHSCOPE_BASE_URL, MODEL_NAME
 from app.schemas.api_models import QuestionRequest
 from app.services.agent_chat_service import chat_with_agent_state
 from app.services.index_service import get_embeddings

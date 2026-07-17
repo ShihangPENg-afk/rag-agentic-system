@@ -1,4 +1,4 @@
-from app.db import models  # noqa: F401 — register ORM models with Base.metadata
+import app.models  # noqa: F401 — register ORM models with Base.metadata
 from app.db.database import Base, engine
 
 

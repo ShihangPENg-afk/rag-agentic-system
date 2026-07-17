@@ -1,7 +1,7 @@
 from typing import Dict, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from rag import RAGSystem
+    from app.services.rag_service import RAGSystem
 
 
 

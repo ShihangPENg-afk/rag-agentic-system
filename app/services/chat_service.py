@@ -14,7 +14,7 @@ import dashscope
 import numpy as np
 from dashscope import Generation
 
-from config import (
+from app.core.config import (
     API_KEY,
     MODEL_NAME,
     TOP_K,

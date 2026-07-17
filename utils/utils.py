@@ -7,7 +7,7 @@ from typing import List
 
 import requests
 
-from config import MIN_CHUNK_LENGTH, NETWORK_CHECK_URL, NETWORK_TIMEOUT
+from app.core.config import MIN_CHUNK_LENGTH, NETWORK_CHECK_URL, NETWORK_TIMEOUT
 
 
 def clean_blank_chunks(chunks: List[str]) -> List[str]:
@@ -29,7 +29,7 @@ def calculate_similarity(a: str, b: str) -> float:
 
 def deduplicate_chunks(chunks: List[str]) -> List[str]:
     """文本去重"""
-    from config import SIMILARITY_THRESHOLD
+    from app.core.config import SIMILARITY_THRESHOLD
 
     chunks = clean_blank_chunks(chunks)
     unique_chunks = []

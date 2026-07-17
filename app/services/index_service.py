@@ -7,7 +7,7 @@ import dashscope
 from dashscope.embeddings import TextEmbedding
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-from config import (
+from app.core.config import (
     API_KEY,
     CHUNK_SIZE,
     CHUNK_OVERLAP,

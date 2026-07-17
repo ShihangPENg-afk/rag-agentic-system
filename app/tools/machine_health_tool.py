@@ -9,7 +9,7 @@ from typing import Any
 
 import requests
 
-from config import HEALTH_API_URL, HEALTH_API_TIMEOUT
+from app.core.config import HEALTH_API_URL, HEALTH_API_TIMEOUT
 
 
 def _format_probabilities(probabilities: Any) -> str:

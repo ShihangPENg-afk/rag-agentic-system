@@ -6,7 +6,7 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, Tool
 from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
 
-from config import API_KEY, MODEL_NAME, DASHSCOPE_BASE_URL
+from app.core.config import API_KEY, DASHSCOPE_BASE_URL, MODEL_NAME
 from app.agent.state import AgentState
 from app.tools.document_tools import count_tables_tool, list_headings_tool
 from app.tools.machine_health_tool import check_machine_health_tool
