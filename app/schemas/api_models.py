@@ -1,4 +1,5 @@
 from typing import Any, Dict, List, Optional, Tuple
+from uuid import UUID
 
 from pydantic import BaseModel, Field, ConfigDict
 
@@ -10,12 +11,14 @@ class HistoryTurn(BaseModel):
 class QuestionRequest(BaseModel):
     question: str
     knowledge_base_id: str
+    session_id: Optional[UUID] = None
     history: List[HistoryTurn] = Field(default_factory=list)
     debug: bool = False
 
 class AnswerResponse(BaseModel):
     answer: str
     knowledge_base_id: str
+    session_id: Optional[UUID] = None
     history: List[Tuple[str, str]] = Field(default_factory=list)
     debug: Optional[Dict[str, Any]] = None
     mode: str = "agent"

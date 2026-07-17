@@ -160,10 +160,10 @@ DASHSCOPE_API_KEY=你的_API_Key
 DASHSCOPE_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1   # 可选
 
 # PostgreSQL（文档元信息 / QA 日志；向量仍走 FAISS）
-POSTGRES_USER=ragagent
-POSTGRES_PASSWORD=ragagent_secret
-POSTGRES_DB=ragagent
-DATABASE_URL=postgresql+psycopg2://ragagent:ragagent_secret@localhost:5432/ragagent
+POSTGRES_USER=rag_agent_user
+POSTGRES_PASSWORD=请改成你自己的数据库密码
+POSTGRES_DB=rag_agent_db
+DATABASE_URL=postgresql+psycopg2://rag_agent_user:请改成你自己的数据库密码@localhost:5432/rag_agent_db
 
 # 工业设备健康预测 API（predictive-maintenance-mini，默认 :8010）
 HEALTH_API_URL=http://127.0.0.1:8010
@@ -181,6 +181,14 @@ docker compose up postgres -d
 ```
 
 或使用 `make docker-up` 同时启动 PostgreSQL 与 API 服务（见下文 Docker 启动）。
+
+最小 Docker 启动命令：
+
+```bash
+make env-init
+# 编辑 .env：填入 DASHSCOPE_API_KEY，并设置 POSTGRES_USER / POSTGRES_PASSWORD
+docker compose up --build
+```
 
 ### 3. 本地启动
 
@@ -284,7 +292,7 @@ make docker-up          # 后台构建并启动
 docker compose up --build
 ```
 
-启动后访问 [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)。Compose 会同时拉起 `postgres`（端口 `5432`）与 `rag-agentic-system`（端口 `8000`），并通过 `DATABASE_URL` 将 API 服务指向数据库容器。
+启动后访问 [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)。Compose 会同时拉起 `postgres`（端口 `5432`）与 `rag-agentic-system`（端口 `8000`），数据库名为 `rag_agent_db`，并通过 `DATABASE_URL` 将 API 服务指向数据库容器。`POSTGRES_USER` 与 `POSTGRES_PASSWORD` 从本地 `.env` 读取，请勿提交真实密码或 API Key。
 
 > **FAISS 向量索引**仍在 API 进程内存中，容器重启后需重新上传 PDF 才能问答；**PostgreSQL** 中的文档元信息与 QA 日志会保留。
 

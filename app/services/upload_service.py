@@ -1,11 +1,17 @@
 import uuid
+from uuid import UUID
 
 from app.repositories.document_repository import record_document
 from app.services.rag_service import RAGSystem
 from app.services.kb_registry import register_knowledge_base
 
 
-def create_knowledge_base_from_saved_pdf(temp_pdf_path: str, safe_filename: str) -> dict:
+def create_knowledge_base_from_saved_pdf(
+    temp_pdf_path: str,
+    safe_filename: str,
+    user_id: UUID | str | None = None,
+    content_type: str = "application/pdf",
+) -> dict:
     """
     根据已保存到本地的 PDF 文件构建知识库，并注册到内存中。
     """
@@ -17,7 +23,13 @@ def create_knowledge_base_from_saved_pdf(temp_pdf_path: str, safe_filename: str)
 
     knowledge_base_id = str(uuid.uuid4())
     register_knowledge_base(knowledge_base_id, rag_system)
-    record_document(knowledge_base_id, safe_filename, len(rag_system.chunks))
+    record_document(
+        knowledge_base_id,
+        safe_filename,
+        len(rag_system.chunks),
+        user_id=user_id,
+        content_type=content_type,
+    )
 
     return {
         "knowledge_base_id": knowledge_base_id,

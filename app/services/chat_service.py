@@ -9,6 +9,7 @@
 5. 模型回答
 """
 from typing import List, Optional, Tuple
+from uuid import UUID
 
 import dashscope
 import numpy as np
@@ -273,3 +274,57 @@ def answer_with_index(index, chunks: List[str], user_query: str, history: Option
         valid_turns=valid_turns,
         max_history=max_history,
     )
+
+
+def persist_chat_exchange(
+    user_id: UUID,
+    question: str,
+    answer: str,
+    session_id: UUID | str | None = None,
+) -> dict:
+    """
+    保存一轮用户问题和 AI 回答。
+
+    不参与 RAG 推理，只负责把问答结果落到 sessions/messages。
+    """
+    from app.repositories.chat_repository import (
+        create_chat_session,
+        create_message,
+        get_chat_session_by_user,
+    )
+
+    if session_id is None:
+        title = question.strip()[:80] or "新会话"
+        session = create_chat_session(user_id=user_id, title=title)
+        session_id = session["id"]
+    else:
+        session = get_chat_session_by_user(session_id=session_id, user_id=user_id)
+        if session is None:
+            raise LookupError("会话不存在或无权访问")
+
+    create_message(session_id=session_id, role="user", content=question)
+    create_message(session_id=session_id, role="assistant", content=answer)
+    return get_chat_session_by_user(session_id=session_id, user_id=user_id) or session
+
+
+def list_user_chat_sessions(user_id: UUID, limit: int = 50) -> list[dict]:
+    from app.repositories.chat_repository import list_chat_sessions_by_user
+
+    return list_chat_sessions_by_user(user_id=user_id, limit=limit)
+
+
+def list_user_session_messages(
+    user_id: UUID,
+    session_id: UUID | str,
+    limit: int = 200,
+) -> list[dict]:
+    from app.repositories.chat_repository import list_messages_by_session_and_user
+
+    messages = list_messages_by_session_and_user(
+        session_id=session_id,
+        user_id=user_id,
+        limit=limit,
+    )
+    if messages is None:
+        raise LookupError("会话不存在或无权访问")
+    return messages
