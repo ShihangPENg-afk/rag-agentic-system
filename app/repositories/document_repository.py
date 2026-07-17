@@ -78,6 +78,24 @@ def get_document_by_id_and_user(
         db.close()
 
 
+def get_document_by_id(document_id: str | uuid.UUID) -> dict[str, Any] | None:
+    db = SessionLocal()
+    try:
+        stmt = select(Document).where(Document.id == uuid.UUID(str(document_id)))
+        doc = db.execute(stmt).scalar_one_or_none()
+        return _document_to_dict(doc) if doc is not None else None
+    except ValueError:
+        return None
+    except SQLAlchemyError as e:
+        logger.warning("查询 document 失败: %s", e)
+        return None
+    except Exception as e:
+        logger.warning("查询 document 时发生异常: %s", e)
+        return None
+    finally:
+        db.close()
+
+
 def list_recent_documents_by_user(
     user_id: str | uuid.UUID,
     limit: int = 50,

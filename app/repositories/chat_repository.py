@@ -69,6 +69,20 @@ def get_chat_session_by_user(
             db.close()
 
 
+def get_chat_session_by_id(
+    session_id: str | uuid.UUID,
+    db: Session | None = None,
+) -> dict | None:
+    owns_session = db is None
+    db = db or SessionLocal()
+    try:
+        session = db.get(ChatSession, uuid.UUID(str(session_id)))
+        return _session_to_dict(session) if session is not None else None
+    finally:
+        if owns_session:
+            db.close()
+
+
 def list_chat_sessions_by_user(
     user_id: str | uuid.UUID,
     limit: int = 50,

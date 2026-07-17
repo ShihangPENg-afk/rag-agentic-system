@@ -290,6 +290,7 @@ def persist_chat_exchange(
     from app.repositories.chat_repository import (
         create_chat_session,
         create_message,
+        get_chat_session_by_id,
         get_chat_session_by_user,
     )
 
@@ -300,6 +301,8 @@ def persist_chat_exchange(
     else:
         session = get_chat_session_by_user(session_id=session_id, user_id=user_id)
         if session is None:
+            if get_chat_session_by_id(session_id=session_id) is not None:
+                raise PermissionError("会话不属于当前用户")
             raise LookupError("会话不存在或无权访问")
 
     create_message(session_id=session_id, role="user", content=question)
@@ -318,7 +321,10 @@ def list_user_session_messages(
     session_id: UUID | str,
     limit: int = 200,
 ) -> list[dict]:
-    from app.repositories.chat_repository import list_messages_by_session_and_user
+    from app.repositories.chat_repository import (
+        get_chat_session_by_id,
+        list_messages_by_session_and_user,
+    )
 
     messages = list_messages_by_session_and_user(
         session_id=session_id,
@@ -326,5 +332,7 @@ def list_user_session_messages(
         limit=limit,
     )
     if messages is None:
+        if get_chat_session_by_id(session_id=session_id) is not None:
+            raise PermissionError("会话不属于当前用户")
         raise LookupError("会话不存在或无权访问")
     return messages

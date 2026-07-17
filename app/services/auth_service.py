@@ -12,7 +12,7 @@ def register_user(db: Session, email: str, password: str) -> User:
     existing = get_user_by_email(db, email)
     if existing is not None:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=status.HTTP_409_CONFLICT,
             detail="Email already registered",
         )
 

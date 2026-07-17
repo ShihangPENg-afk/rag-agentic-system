@@ -85,13 +85,15 @@ async def ask_question(
             "debug": result["debug"],
             "mode": "agent",
         }
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
     except LookupError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except HTTPException:
         raise
     except Exception as e:
         logger.exception("Agent 问答时出错: %s", str(e))
-        raise HTTPException(status_code=500, detail=f"服务器内部错误: {str(e)}")
+        raise HTTPException(status_code=500, detail="服务器内部错误，请稍后重试")
 
 
 @router.post("/ask_rag/", response_model=AnswerResponse, summary="经典 RAG 提问接口（回退模式）")
@@ -122,13 +124,15 @@ async def ask_question_rag(
             "debug": None,
             "mode": "rag",
         }
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
     except LookupError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except HTTPException:
         raise
     except Exception as e:
         logger.exception("经典 RAG 问答时出错: %s", str(e))
-        raise HTTPException(status_code=500, detail=f"服务器内部错误: {str(e)}")
+        raise HTTPException(status_code=500, detail="服务器内部错误，请稍后重试")
 
 
 @router.get("/chat/sessions", response_model=ChatSessionListResponse, summary="获取当前用户会话列表")
@@ -156,6 +160,8 @@ async def get_chat_messages(
             session_id=session_id,
             limit=limit,
         )
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
     except LookupError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
