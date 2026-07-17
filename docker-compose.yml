@@ -1,4 +1,19 @@
 services:
+  redis:
+    container_name: rag-agentic-system-redis
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
   postgres:
     container_name: rag-agentic-system-postgres
     image: postgres:16-alpine
@@ -28,12 +43,15 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:?POSTGRES_USER is required}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/rag_agent_db
       POSTGRES_DB: rag_agent_db
+      REDIS_URL: redis://redis:6379/0
       HEALTH_API_URL: http://host.docker.internal:8010
     volumes:
       - ./data:/app/data
       - ./evals/out:/app/evals/out
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
@@ -51,3 +69,4 @@ services:
 
 volumes:
   postgres_data:
+  redis_data:

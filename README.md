@@ -167,6 +167,9 @@ DATABASE_URL=postgresql+psycopg2://rag_agent_user:请改成你自己的数据库
 
 # 工业设备健康预测 API（predictive-maintenance-mini，默认 :8010）
 HEALTH_API_URL=http://127.0.0.1:8010
+
+# Redis（用于 chat 接口限流）
+REDIS_URL=redis://localhost:6379/0
 ```
 
 > 不要使用 `cp .env.example .env` 覆盖已有 `.env`，否则会把真实 API Key 替换成占位符。  
@@ -292,7 +295,7 @@ make docker-up          # 后台构建并启动
 docker compose up --build
 ```
 
-启动后访问 [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)。Compose 会同时拉起 `postgres`（端口 `5432`）与 `rag-agentic-system`（端口 `8000`），数据库名为 `rag_agent_db`，并通过 `DATABASE_URL` 将 API 服务指向数据库容器。`POSTGRES_USER` 与 `POSTGRES_PASSWORD` 从本地 `.env` 读取，请勿提交真实密码或 API Key。
+启动后访问 [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)。Compose 会同时拉起 `postgres`（端口 `5432`）、`redis`（端口 `6379`）与 `rag-agentic-system`（端口 `8000`）。数据库名为 `rag_agent_db`，并通过 `DATABASE_URL` 将 API 服务指向数据库容器；`REDIS_URL` 指向 Redis 容器，用于 `/ask/` 与 `/ask_rag/` 的用户级限流（同一用户每分钟最多 20 次）。`POSTGRES_USER` 与 `POSTGRES_PASSWORD` 从本地 `.env` 读取，请勿提交真实密码或 API Key。
 
 > **FAISS 向量索引**仍在 API 进程内存中，容器重启后需重新上传 PDF 才能问答；**PostgreSQL** 中的文档元信息与 QA 日志会保留。
 
