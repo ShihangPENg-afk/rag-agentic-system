@@ -122,6 +122,61 @@ Streamlit UI（:8501）──┬── API_BASE_URL → rag-agentic-system :8000
 
 ---
 
+## Knowledge Base Persistence
+
+本仓库的主检索路径已经从 FAISS 内存索引升级为 PostgreSQL + pgvector。原因很直接：
+
+- FAISS 是进程内索引，服务重启、滚动发布或多实例部署后，索引状态会丢失或不一致。
+- 文档的新增、删除、更新需要事务一致性，pgvector 可以把 `documents`、`chunks`、`chunk_embeddings` 放进同一数据库事务里处理。
+- PostgreSQL 天然支持按 `user_id`、`collection_id`、`document_id` 做过滤，适合做多用户知识库隔离。
+- 元数据和向量统一落库后，服务重启后无需重新上传文档就能继续检索。
+
+### 表职责
+
+| 表 | 职责 |
+|------|------|
+| `collections` | 知识库集合，按用户分组和管理多个文档集合。 |
+| `documents` | 文档元数据，保存文件名、状态、chunk 数、哈希、创建/更新时间等。 |
+| `chunks` | 切分后的文本块，保存 `chunk_index`、正文内容及所属文档 / 集合 / 用户。 |
+| `chunk_embeddings` | 每个 chunk 的 embedding 向量，保存向量、模型名、维度及关联 ID。 |
+
+### 服务重启后是否可用
+
+可用。文档上传或更新后，chunks 和 embeddings 会持久化到 PostgreSQL；重启服务后，检索直接读取数据库中的 pgvector 数据，不需要重新上传文档，也不依赖内存里的 FAISS 索引。
+
+### 如何运行验证脚本
+
+```bash
+python scripts/verify_pgvector_persistence.py
+```
+
+脚本会：
+
+1. 写入一个测试文档
+2. 生成 chunks 和 embeddings
+3. 模拟服务重启，清空内存知识库注册
+4. 重新从数据库检索，验证无需重新上传也能命中相关 chunk
+
+如果没有真实 embedding API Key，可使用 `EMBEDDING_PROVIDER=fake`。测试环境默认也是 fake embedding。
+
+### 如何删除和更新文档
+
+- 删除：`DELETE /documents/{document_id}`
+- 更新：`PUT /documents/{document_id}`，上传新的 PDF 后替换原文档内容
+
+这两个接口都要求当前登录用户是文档所有者。删除时会同步删除旧的 chunks 和 embeddings；更新时会先删除旧数据，再在同一事务中写入新 chunks 和 embeddings，避免留下半成品。
+
+### 检索如何过滤
+
+- `user_id` 是所有持久化检索的强制过滤条件
+- `document_id` 用于限定到单个文档
+- `collection_id` 用于限定到单个知识库集合
+- 同时传入 `document_id` 和 `collection_id` 时，两者都会生效
+
+`/documents/retrieve` 以及 `POST /ask/`、`POST /ask_rag/` 的底层检索都遵循这些过滤条件，不能跨用户访问其他人的文档。
+
+---
+
 ## 快速启动
 
 ### 环境要求
@@ -417,6 +472,9 @@ curl -X POST "http://127.0.0.1:8000/ask/" \
 | `POST` | `/upload_pdfs/` | 批量上传 PDF |
 | `GET` | `/knowledge_bases` | 列出当前已加载的知识库兼容视图 |
 | `GET` | `/documents/` | 最近上传文档（PostgreSQL 元信息） |
+| `POST` | `/documents/retrieve` | 按 `user_id` / `document_id` / `collection_id` 检索 chunk |
+| `PUT` | `/documents/{document_id}` | 替换当前用户文档内容 |
+| `DELETE` | `/documents/{document_id}` | 删除当前用户文档并同步删除 chunks / embeddings |
 | `GET` | `/qa_logs/?knowledge_base_id=...` | 按知识库查询历史问答（PostgreSQL） |
 | `DELETE` | `/knowledge_base/{kb_id}` | 删除指定知识库（仅内存，不删 PG 记录） |
 | `DELETE` | `/clear_all_knowledge_bases` | 清空所有内存知识库 |

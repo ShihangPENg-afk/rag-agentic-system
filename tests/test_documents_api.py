@@ -203,6 +203,156 @@ def test_user_cannot_delete_another_users_document(
     assert db_session.get(Document, document.id) is not None
 
 
+def test_update_document_replaces_chunks_embeddings_and_updates_metadata(
+    client,
+    monkeypatch,
+    register_user,
+    auth_headers,
+    db_session,
+):
+    owner = register_user("update-owner@example.com")
+    collection, document, old_chunk, old_embedding = _create_vector_document(
+        db_session,
+        user_id=owner["id"],
+        filename="old.pdf",
+        content="old private chunk",
+    )
+    document_id = document.id
+    old_chunk_id = old_chunk.id
+    old_embedding_id = old_embedding.id
+    old_updated_at = document.updated_at
+    new_embedding = [0.02] * 1536
+
+    monkeypatch.setattr(
+        "app.services.upload_service.build_chunks_and_embeddings_from_pdf",
+        lambda _path: (["new first chunk", "new second chunk"], [new_embedding, new_embedding], 1536),
+    )
+    monkeypatch.setattr("app.services.upload_service.build_faiss_index", lambda *a, **k: None)
+
+    response = client.put(
+        f"/documents/{document_id}",
+        headers=auth_headers("update-owner@example.com"),
+        files={"file": ("updated.pdf", b"%PDF-1.4\nupdated pdf", "application/pdf")},
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["knowledge_base_id"] == str(document_id)
+    assert body["collection_id"] == str(collection.id)
+    assert body["filename"] == "updated.pdf"
+    assert body["chunks_count"] == 2
+
+    db_session.expire_all()
+    updated_document = db_session.get(Document, document_id)
+    assert updated_document is not None
+    assert updated_document.filename == "updated.pdf"
+    assert updated_document.chunks_count == 2
+    assert updated_document.updated_at != old_updated_at
+    assert db_session.get(Chunk, old_chunk_id) is None
+    assert db_session.get(ChunkEmbedding, old_embedding_id) is None
+
+    chunks = (
+        db_session.execute(
+            select(Chunk)
+            .where(Chunk.document_id == document_id)
+            .order_by(Chunk.chunk_index.asc())
+        )
+        .scalars()
+        .all()
+    )
+    embeddings_count = db_session.scalar(
+        select(func.count()).select_from(ChunkEmbedding).where(
+            ChunkEmbedding.document_id == document_id
+        )
+    )
+    assert [chunk.content for chunk in chunks] == ["new first chunk", "new second chunk"]
+    assert embeddings_count == 2
+
+
+def test_update_document_embedding_failure_keeps_existing_chunks_and_embeddings(
+    client,
+    monkeypatch,
+    register_user,
+    auth_headers,
+    db_session,
+):
+    owner = register_user("update-failure-owner@example.com")
+    _collection, document, old_chunk, old_embedding = _create_vector_document(
+        db_session,
+        user_id=owner["id"],
+        filename="stable.pdf",
+        content="stable old chunk",
+    )
+    document_id = document.id
+    old_chunk_id = old_chunk.id
+    old_embedding_id = old_embedding.id
+    old_updated_at = document.updated_at
+
+    def fail_embedding(_path):
+        raise ValueError("embedding failed")
+
+    monkeypatch.setattr(
+        "app.services.upload_service.build_chunks_and_embeddings_from_pdf",
+        fail_embedding,
+    )
+    monkeypatch.setattr(
+        "app.services.upload_service.build_faiss_index",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("FAISS should not be built")),
+    )
+
+    response = client.put(
+        f"/documents/{document_id}",
+        headers=auth_headers("update-failure-owner@example.com"),
+        files={"file": ("failed.pdf", b"%PDF-1.4\nfailed pdf", "application/pdf")},
+    )
+
+    assert response.status_code == 400
+    assert "embedding failed" in response.json()["detail"]
+
+    db_session.expire_all()
+    document_after_failure = db_session.get(Document, document_id)
+    assert document_after_failure is not None
+    assert document_after_failure.filename == "stable.pdf"
+    assert document_after_failure.chunks_count == 1
+    assert document_after_failure.updated_at == old_updated_at
+    assert db_session.get(Chunk, old_chunk_id) is not None
+    assert db_session.get(ChunkEmbedding, old_embedding_id) is not None
+
+
+def test_user_cannot_update_another_users_document(
+    client,
+    monkeypatch,
+    register_user,
+    auth_headers,
+    db_session,
+):
+    owner = register_user("update-private-owner@example.com")
+    register_user("update-intruder@example.com")
+    _collection, document, _old_chunk, _old_embedding = _create_vector_document(
+        db_session,
+        user_id=owner["id"],
+        filename="private-update.pdf",
+    )
+
+    def fail_if_called(_path):
+        raise AssertionError("document rebuild should not run for unauthorized update")
+
+    monkeypatch.setattr(
+        "app.services.upload_service.build_chunks_and_embeddings_from_pdf",
+        fail_if_called,
+    )
+
+    response = client.put(
+        f"/documents/{document.id}",
+        headers=auth_headers("update-intruder@example.com"),
+        files={"file": ("intruder.pdf", b"%PDF-1.4\nintruder pdf", "application/pdf")},
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Not enough permissions"
+    assert db_session.get(Document, document.id) is not None
+
+
 def test_retrieve_chunks_passes_user_document_and_collection_filters(
     client,
     monkeypatch,

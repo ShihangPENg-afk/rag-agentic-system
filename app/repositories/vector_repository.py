@@ -3,9 +3,10 @@ from __future__ import annotations
 import hashlib
 import os
 import uuid
+from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.models.chunk import Chunk
@@ -158,6 +159,114 @@ def persist_document_chunks_embeddings(
         "collection": collection,
         "chunks_count": len(chunk_rows),
     }
+
+
+def replace_document_chunks_embeddings(
+    db: Session,
+    *,
+    document_id: str | uuid.UUID,
+    filename: str,
+    content_type: str,
+    chunks: list[str],
+    embeddings: list[list[float]],
+    user_id: str | uuid.UUID,
+    file_size: int | None = None,
+    content_hash: str | None = None,
+    embedding_model: str | None = None,
+    embedding_dimension: int | None = None,
+) -> dict[str, Any] | None:
+    if len(chunks) != len(embeddings):
+        raise ValueError("chunks 与 embeddings 数量不一致，无法持久化")
+
+    normalized_document_id = _to_uuid(document_id)
+    normalized_user_id = _to_uuid(user_id)
+    if normalized_document_id is None or normalized_user_id is None:
+        raise ValueError("document_id 和 user_id 不能为空")
+
+    embedding_model = embedding_model or get_embedding_model_name()
+    dimension = embedding_dimension or (len(embeddings[0]) if embeddings else 0)
+
+    try:
+        document = db.execute(
+            select(Document).where(
+                Document.id == normalized_document_id,
+                Document.user_id == normalized_user_id,
+            )
+        ).scalar_one_or_none()
+        if document is None:
+            return None
+
+        collection_id = document.collection_id
+        old_embeddings_deleted = (
+            db.execute(
+                delete(ChunkEmbedding).where(
+                    ChunkEmbedding.document_id == normalized_document_id,
+                    ChunkEmbedding.user_id == normalized_user_id,
+                )
+            ).rowcount
+            or 0
+        )
+        old_chunks_deleted = (
+            db.execute(
+                delete(Chunk).where(
+                    Chunk.document_id == normalized_document_id,
+                    Chunk.user_id == normalized_user_id,
+                )
+            ).rowcount
+            or 0
+        )
+        db.flush()
+
+        chunk_rows: list[tuple[Chunk, list[float]]] = []
+        for index, (content, embedding) in enumerate(zip(chunks, embeddings)):
+            chunk = Chunk(
+                document_id=document.id,
+                collection_id=collection_id,
+                user_id=normalized_user_id,
+                chunk_index=index,
+                content=content,
+                content_hash=_sha256_text(content),
+                metadata_json={"source": filename},
+            )
+            db.add(chunk)
+            chunk_rows.append((chunk, [float(value) for value in embedding]))
+
+        db.flush()
+
+        for chunk, embedding in chunk_rows:
+            db.add(
+                ChunkEmbedding(
+                    chunk_id=chunk.id,
+                    document_id=document.id,
+                    collection_id=collection_id,
+                    user_id=normalized_user_id,
+                    embedding_model=embedding_model,
+                    embedding_dimension=dimension,
+                    embedding=embedding,
+                )
+            )
+
+        document.filename = filename
+        document.content_type = content_type
+        document.file_size = file_size
+        document.content_hash = content_hash
+        document.chunks_count = len(chunk_rows)
+        document.status = "ready"
+        document.error_message = None
+        document.updated_at = datetime.now(timezone.utc)
+
+        db.commit()
+        db.refresh(document)
+
+        return {
+            "document": document,
+            "chunks_count": len(chunk_rows),
+            "old_chunks_deleted": old_chunks_deleted,
+            "old_embeddings_deleted": old_embeddings_deleted,
+        }
+    except Exception:
+        db.rollback()
+        raise
 
 
 def list_chunks_for_document(
