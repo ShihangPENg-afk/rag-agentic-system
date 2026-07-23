@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 from typing import Any, Dict, List, Tuple
+from uuid import UUID
 
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 from app.agent.graph import build_agent_graph
 from app.schemas.api_models import QuestionRequest
-from app.services.kb_registry import get_all_ids, get_knowledge_base
 
 MAX_HISTORY = 3
 TOOL_OUTPUT_PREVIEW_LENGTH = 300
@@ -44,7 +44,10 @@ def _build_memory_summary(history_pairs: List[Tuple[str, str]], max_turns: int =
     return "\n".join(lines)
 
 
-def build_agent_state_from_request(request: QuestionRequest) -> dict:
+def build_agent_state_from_request(
+    request: QuestionRequest,
+    user_id: UUID | str | None = None,
+) -> dict:
     """
     从 API 请求构造 AgentState 风格的输入状态。
     """
@@ -58,6 +61,8 @@ def build_agent_state_from_request(request: QuestionRequest) -> dict:
     return {
         "messages": input_messages,
         "knowledge_base_id": request.knowledge_base_id,
+        "user_id": str(user_id) if user_id is not None else None,
+        "collection_id": str(request.collection_id) if request.collection_id is not None else None,
         "chat_history_pairs": history_pairs,
         "current_question": request.question,
         "retrieved_evidence": [],
@@ -148,7 +153,10 @@ def _extract_retrieved_evidence(messages: list) -> List[str]:
     return evidence[:5]
 
 
-def chat_with_agent_state(request: QuestionRequest) -> dict:
+def chat_with_agent_state(
+    request: QuestionRequest,
+    user_id: UUID | str | None = None,
+) -> dict:
     """
     Agent 问答主入口：
     1. 校验知识库
@@ -156,17 +164,12 @@ def chat_with_agent_state(request: QuestionRequest) -> dict:
     3. 调用 LangGraph
     4. 提取 answer / history / debug
     """
-    rag_system = get_knowledge_base(request.knowledge_base_id)
-    if rag_system is None:
-        available_ids = get_all_ids()
-        raise LookupError(
-            f"知识库不存在: {request.knowledge_base_id}。可用知识库ID: {available_ids[:5]}..."
-        )
-
-    input_state = build_agent_state_from_request(request)
+    input_state = build_agent_state_from_request(request, user_id=user_id)
 
     graph = build_agent_graph(
         knowledge_base_id=request.knowledge_base_id,
+        user_id=user_id,
+        collection_id=request.collection_id,
         chat_history_pairs=input_state["chat_history_pairs"],
     )
 

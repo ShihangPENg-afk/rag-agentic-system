@@ -37,10 +37,14 @@ def after_evaluator(state: AgentState) -> str:
 
 def build_agent_graph(
     knowledge_base_id: str,
+    user_id: str | None = None,
+    collection_id: str | None = None,
     chat_history_pairs: list[tuple[str, str]] | None = None,
 ):
     tools = make_agent_tools(
         knowledge_base_id=knowledge_base_id,
+        user_id=user_id,
+        collection_id=collection_id,
         history_pairs=chat_history_pairs or [],
     )
     tool_node = ToolNode(tools)

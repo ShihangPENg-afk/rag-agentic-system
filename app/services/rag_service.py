@@ -6,9 +6,9 @@ from app.services.index_service import init_index_from_pdf
 
 
 class RAGSystem:
-    def __init__(self):
-        self.index = None
-        self.chunks = []
+    def __init__(self, index=None, chunks=None):
+        self.index = index
+        self.chunks = chunks or []
 
     def init_from_pdf(self, pdf_path: str) -> bool:
         """从 PDF 初始化 RAG 系统。"""

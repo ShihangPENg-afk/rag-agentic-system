@@ -118,6 +118,8 @@ def build_memory_system_message(memory_summary: str) -> SystemMessage | None:
 
 def make_agent_tools(
     knowledge_base_id: str,
+    user_id: str | None = None,
+    collection_id: str | None = None,
     history_pairs: list[tuple[str, str]] | None = None,
 ):
     history_pairs = history_pairs or []
@@ -127,6 +129,8 @@ def make_agent_tools(
         """从当前知识库检索与用户问题最相关的文本片段。"""
         return retrieve_chunks_tool(
             knowledge_base_id=knowledge_base_id,
+            user_id=user_id,
+            collection_id=collection_id,
             user_query=query,
             history=history_pairs,
         )
@@ -134,12 +138,12 @@ def make_agent_tools(
     @tool("list_headings")
     def list_headings() -> str:
         """列出当前知识库中的章节/小节标题。"""
-        return list_headings_tool(knowledge_base_id)
+        return list_headings_tool(knowledge_base_id, user_id=user_id)
 
     @tool("count_tables")
     def count_tables() -> str:
         """粗略统计当前知识库中的表格迹象数量。"""
-        return count_tables_tool(knowledge_base_id)
+        return count_tables_tool(knowledge_base_id, user_id=user_id)
 
     @tool("check_machine_health")
     def check_machine_health(sensor_data: dict) -> str:
@@ -462,6 +466,8 @@ def agent_node(state: AgentState) -> dict:
 
     tools = make_agent_tools(
         knowledge_base_id=knowledge_base_id,
+        user_id=state.get("user_id"),
+        collection_id=state.get("collection_id"),
         history_pairs=chat_history_pairs,
     )
     model = create_model().bind_tools(tools)

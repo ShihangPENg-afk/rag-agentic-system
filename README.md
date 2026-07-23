@@ -2,7 +2,7 @@
 
 > **English version:** [README.en.md](README.en.md)
 
-基于 **Agentic RAG** 的 PDF 智能问答系统，并集成 **工业设备健康预测** 能力：上传 PDF 后自动切块、向量化并建立 FAISS 索引，通过 LangGraph Agent 进行工具调用、多步推理与对话记忆；同时通过 `check_machine_health` 工具 HTTP 调用独立工业预测服务，实现「文档问答 + 传感器风险预测」双链路编排。
+基于 **Agentic RAG** 的 PDF 智能问答系统，并集成 **工业设备健康预测** 能力：上传 PDF 后自动切块、向量化并写入 PostgreSQL + pgvector 持久化向量库，通过 LangGraph Agent 进行工具调用、多步推理与对话记忆；同时通过 `check_machine_health` 工具 HTTP 调用独立工业预测服务，实现「文档问答 + 传感器风险预测」双链路编排。
 
 项目覆盖 **Web API（FastAPI）**、**Streamlit 前端**、**PostgreSQL 结构化日志**、**Docker 部署**、**RAGAS 离线评估** 与 **双服务联动验收**，可作为 RAG + Agent + 工业场景 AI 的工程化 POC 展示。
 
@@ -58,14 +58,14 @@
 | 功能 | 说明 |
 |------|------|
 | **PDF 上传与文本切块** | 单文件 / 批量上传，校验 `%PDF` 魔数，pypdf 解析后切块、去重 |
-| **FAISS 向量检索** | DashScope TextEmbedding 向量化，进程内 FAISS 相似度检索 |
+| **pgvector 向量检索** | 可配置 embedding provider，默认 DashScope TextEmbedding，PostgreSQL + pgvector 持久化相似度检索 |
 | **Agent 工具调用** | LangGraph 驱动，支持 `retrieve_chunks`、`list_headings`、`count_tables`、**`check_machine_health`**（工业预测） |
 | **工业预测联动** | Agent 工具 / Streamlit Tab 双入口，HTTP 调用 predictive-maintenance-mini 的 `/predict` |
 | **多步推理** | `planner` 拆解子问题，`evaluator` 汇总证据并决定是否继续检索 |
 | **对话 Memory** | 请求体传入 `history`，保留最近 3 轮；Agent 将历史摘要注入 system message，检索工具也可利用历史做指代消解 |
 | **Debug trace** | `/ask/` 设置 `debug: true`，返回 `tool_trace`、`reasoning_snapshot`、`retrieved_evidence_preview` |
 | **Streamlit UI** | 浏览器端上传 PDF、多轮问答、Debug Trace 可视化、历史问答查看、**设备健康预测**（联动 predictive-maintenance-mini） |
-| **PostgreSQL 混合持久化** | 文档元信息与 QA 日志落库；**向量检索仍用进程内 FAISS** |
+| **PostgreSQL + pgvector 持久化** | 文档元信息、chunks、embeddings 与 QA 日志落库；服务重启后无需重新上传即可检索 |
 | **Docker 部署** | `Dockerfile` + `docker-compose.yml`（含 PostgreSQL），含 healthcheck |
 | **RAGAS 评估** | 离线脚本对 Agent 回答打分，输出 JSON / Markdown 报告 |
 
@@ -83,9 +83,9 @@
 | Web 框架 | **FastAPI**、Uvicorn |
 | 前端 UI | **Streamlit**（`ui/streamlit_app.py`，调用后端 HTTP API） |
 | Agent 编排 | **LangGraph**、LangChain OpenAI 兼容接口 |
-| 向量检索 | **FAISS**、NumPy（进程内，**不写入 PostgreSQL**） |
-| 元数据 / 日志 | **PostgreSQL 16**、SQLAlchemy（`documents`、`qa_logs` 表） |
-| 大模型 / 向量 | **DashScope**（`qwen-plus`、TextEmbedding），通过 **OpenAI-compatible API** 调用 |
+| 向量检索 | **PostgreSQL + pgvector**（主路径）、FAISS v1 后备、NumPy |
+| 元数据 / 日志 | **PostgreSQL 16 + pgvector**、SQLAlchemy（`documents`、`chunks`、`chunk_embeddings`、`qa_logs` 表） |
+| 大模型 / 向量 | **DashScope**（`qwen-plus`、TextEmbedding）或 `fake` embedding provider，通过 **OpenAI-compatible API** 调用 |
 | 容器化 | **Docker**、**Docker Compose**（`rag-agentic-system` + `postgres`；工业服务见 sibling 仓库） |
 | 工业预测（外部） | **[predictive-maintenance-mini](https://github.com/ShihangPENg-afk/predictive-maintenance-mini)**：scikit-learn、FastAPI `:8010`（本仓库通过 HTTP 调用） |
 | 质量评估 | **RAGAS**（`Faithfulness`、`ResponseRelevancy`） |
@@ -96,7 +96,7 @@
 ## 架构概览
 
 ```
-上传 PDF → 切块 / 向量化 → FAISS 索引（进程内，可问答）
+上传 PDF → 切块 / 向量化 → PostgreSQL + pgvector（持久化，可重启恢复）
               │                    ↓
               │          POST /ask/（Agent，默认）
               │                    ↓
@@ -106,7 +106,7 @@
               │    check_machine_health ──HTTP──► predictive-maintenance-mini :8010
               │                                      POST /predict → risk_level
               ↓
-     PostgreSQL documents 表（元信息：文件名、块数、状态）
+     PostgreSQL collections / documents / chunks / chunk_embeddings
                               ↓
                     qa_logs 表（问答历史 + 可选 debug JSON）
 
@@ -115,10 +115,65 @@ Streamlit UI（:8501）──┬── API_BASE_URL → rag-agentic-system :8000
 
                     POST /ask_rag/（经典 RAG，回退）
                               ↓
-         历史增强 → FAISS 检索 → Prompt → DashScope 生成
+         历史增强 → pgvector 检索 → Prompt → DashScope 生成
 ```
 
-**混合持久化说明：** 向量索引与 chunk 文本保存在**进程内存**（FAISS + `kb_registry`）；PostgreSQL **仅**持久化上传文档的元信息（`documents`）与 Agent 问答日志（`qa_logs`）。服务重启后，数据库中的历史记录仍可查询，但 FAISS 索引会丢失，需重新上传 PDF 才能继续问答。详见 [docs/architecture.md](docs/architecture.md)。
+**持久化说明：** chunk 文本与 embedding 向量写入 PostgreSQL + pgvector；检索时可按 `user_id`、`document_id`、`collection_id` 过滤，服务重启后无需重新上传即可继续检索。FAISS v1 仍作为进程内后备实现保留。详见 [docs/architecture.md](docs/architecture.md)。
+
+---
+
+## Knowledge Base Persistence
+
+本仓库的主检索路径已经从 FAISS 内存索引升级为 PostgreSQL + pgvector。原因很直接：
+
+- FAISS 是进程内索引，服务重启、滚动发布或多实例部署后，索引状态会丢失或不一致。
+- 文档的新增、删除、更新需要事务一致性，pgvector 可以把 `documents`、`chunks`、`chunk_embeddings` 放进同一数据库事务里处理。
+- PostgreSQL 天然支持按 `user_id`、`collection_id`、`document_id` 做过滤，适合做多用户知识库隔离。
+- 元数据和向量统一落库后，服务重启后无需重新上传文档就能继续检索。
+
+### 表职责
+
+| 表 | 职责 |
+|------|------|
+| `collections` | 知识库集合，按用户分组和管理多个文档集合。 |
+| `documents` | 文档元数据，保存文件名、状态、chunk 数、哈希、创建/更新时间等。 |
+| `chunks` | 切分后的文本块，保存 `chunk_index`、正文内容及所属文档 / 集合 / 用户。 |
+| `chunk_embeddings` | 每个 chunk 的 embedding 向量，保存向量、模型名、维度及关联 ID。 |
+
+### 服务重启后是否可用
+
+可用。文档上传或更新后，chunks 和 embeddings 会持久化到 PostgreSQL；重启服务后，检索直接读取数据库中的 pgvector 数据，不需要重新上传文档，也不依赖内存里的 FAISS 索引。
+
+### 如何运行验证脚本
+
+```bash
+python scripts/verify_pgvector_persistence.py
+```
+
+脚本会：
+
+1. 写入一个测试文档
+2. 生成 chunks 和 embeddings
+3. 模拟服务重启，清空内存知识库注册
+4. 重新从数据库检索，验证无需重新上传也能命中相关 chunk
+
+如果没有真实 embedding API Key，可使用 `EMBEDDING_PROVIDER=fake`。测试环境默认也是 fake embedding。
+
+### 如何删除和更新文档
+
+- 删除：`DELETE /documents/{document_id}`
+- 更新：`PUT /documents/{document_id}`，上传新的 PDF 后替换原文档内容
+
+这两个接口都要求当前登录用户是文档所有者。删除时会同步删除旧的 chunks 和 embeddings；更新时会先删除旧数据，再在同一事务中写入新 chunks 和 embeddings，避免留下半成品。
+
+### 检索如何过滤
+
+- `user_id` 是所有持久化检索的强制过滤条件
+- `document_id` 用于限定到单个文档
+- `collection_id` 用于限定到单个知识库集合
+- 同时传入 `document_id` 和 `collection_id` 时，两者都会生效
+
+`/documents/retrieve` 以及 `POST /ask/`、`POST /ask_rag/` 的底层检索都遵循这些过滤条件，不能跨用户访问其他人的文档。
 
 ---
 
@@ -157,30 +212,45 @@ make env-check   # 检查 DASHSCOPE_API_KEY 是否已填入真实值
 
 ```env
 DASHSCOPE_API_KEY=你的_API_Key
+EMBEDDING_PROVIDER=dashscope   # 测试/离线可设为 fake
+EMBEDDING_MODEL_NAME=text-embedding-v1
 DASHSCOPE_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1   # 可选
 
-# PostgreSQL（文档元信息 / QA 日志；向量仍走 FAISS）
-POSTGRES_USER=ragagent
-POSTGRES_PASSWORD=ragagent_secret
-POSTGRES_DB=ragagent
-DATABASE_URL=postgresql+psycopg2://ragagent:ragagent_secret@localhost:5432/ragagent
+# PostgreSQL + pgvector（文档元信息 / chunks / embeddings / QA 日志）
+POSTGRES_USER=rag_agent_user
+POSTGRES_PASSWORD=请改成你自己的数据库密码
+POSTGRES_DB=rag_agent_db
+DATABASE_URL=postgresql+psycopg2://rag_agent_user:请改成你自己的数据库密码@localhost:5432/rag_agent_db
 
 # 工业设备健康预测 API（predictive-maintenance-mini，默认 :8010）
 HEALTH_API_URL=http://127.0.0.1:8010
+
+# Redis（用于 chat 接口限流）
+REDIS_URL=redis://localhost:6379/0
 ```
 
 > 不要使用 `cp .env.example .env` 覆盖已有 `.env`，否则会把真实 API Key 替换成占位符。  
 > 若已有 `.env` 但缺少 PostgreSQL 变量，可执行 `make env-init` 自动从 `.env.example` 补全。
 
-### 2.1 启动 PostgreSQL（混合持久化）
+如果你只是跑测试或离线调试 embedding，可把 `EMBEDDING_PROVIDER` 设为 `fake`。这个模式不会调用真实 API，也不需要 `DASHSCOPE_API_KEY`。
 
-PostgreSQL 只存元数据与 QA 日志，**不参与向量检索**。本地开发可先单独启动数据库容器：
+### 2.1 启动 PostgreSQL + pgvector
+
+PostgreSQL 使用 `pgvector/pgvector:pg16` 镜像，负责保存文档元数据、chunks、embedding 向量和 QA 日志。本地开发可先单独启动数据库容器：
 
 ```bash
 docker compose up postgres -d
 ```
 
 或使用 `make docker-up` 同时启动 PostgreSQL 与 API 服务（见下文 Docker 启动）。
+
+最小 Docker 启动命令：
+
+```bash
+make env-init
+# 编辑 .env：填入 DASHSCOPE_API_KEY，并设置 POSTGRES_USER / POSTGRES_PASSWORD
+docker compose up --build
+```
 
 ### 3. 本地启动
 
@@ -195,7 +265,7 @@ make run
 
 ### 4. Streamlit UI 启动
 
-UI 为独立前端，通过 HTTP 调用 FastAPI 后端，不直接访问 FAISS 或 PostgreSQL。
+UI 为独立前端，通过 HTTP 调用 FastAPI 后端，不直接访问数据库或向量库。
 
 **终端 1 — 启动后端**（需 PostgreSQL 已就绪，见 2.1）：
 
@@ -284,9 +354,9 @@ make docker-up          # 后台构建并启动
 docker compose up --build
 ```
 
-启动后访问 [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)。Compose 会同时拉起 `postgres`（端口 `5432`）与 `rag-agentic-system`（端口 `8000`），并通过 `DATABASE_URL` 将 API 服务指向数据库容器。
+启动后访问 [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)。Compose 会同时拉起 `postgres`（端口 `5432`）、`redis`（端口 `6379`）与 `rag-agentic-system`（端口 `8000`）。数据库名为 `rag_agent_db`，并通过 `DATABASE_URL` 将 API 服务指向数据库容器；`REDIS_URL` 指向 Redis 容器，用于 `/ask/` 与 `/ask_rag/` 的用户级限流（同一用户每分钟最多 20 次）。`POSTGRES_USER` 与 `POSTGRES_PASSWORD` 从本地 `.env` 读取，请勿提交真实密码或 API Key。
 
-> **FAISS 向量索引**仍在 API 进程内存中，容器重启后需重新上传 PDF 才能问答；**PostgreSQL** 中的文档元信息与 QA 日志会保留。
+> **pgvector 向量库**持久化保存在 PostgreSQL 中，容器重启后无需重新上传 PDF 即可检索；FAISS v1 仅作为进程内后备实现保留。
 
 Streamlit UI 需在宿主机单独启动（见上文第 4 节），默认连接 `http://127.0.0.1:8000`。
 
@@ -400,8 +470,11 @@ curl -X POST "http://127.0.0.1:8000/ask/" \
 |------|------|------|
 | `GET` | `/health` | 健康检查（网络、知识库数量） |
 | `POST` | `/upload_pdfs/` | 批量上传 PDF |
-| `GET` | `/knowledge_bases` | 列出当前内存中可问答的知识库（FAISS 已加载） |
+| `GET` | `/knowledge_bases` | 列出当前已加载的知识库兼容视图 |
 | `GET` | `/documents/` | 最近上传文档（PostgreSQL 元信息） |
+| `POST` | `/documents/retrieve` | 按 `user_id` / `document_id` / `collection_id` 检索 chunk |
+| `PUT` | `/documents/{document_id}` | 替换当前用户文档内容 |
+| `DELETE` | `/documents/{document_id}` | 删除当前用户文档并同步删除 chunks / embeddings |
 | `GET` | `/qa_logs/?knowledge_base_id=...` | 按知识库查询历史问答（PostgreSQL） |
 | `DELETE` | `/knowledge_base/{kb_id}` | 删除指定知识库（仅内存，不删 PG 记录） |
 | `DELETE` | `/clear_all_knowledge_bases` | 清空所有内存知识库 |
@@ -503,8 +576,8 @@ make docker-up && make docker-verify   # 无 make run；Docker 映射 :8010
 
 ## 当前限制
 
-- **向量仍为进程内 FAISS**：FAISS 索引与 chunk 文本保存在内存中，服务或容器重启后需重新上传 PDF 才能问答；PostgreSQL **不**存储向量或 chunk 正文。
-- **PostgreSQL 仅混合持久化**：`documents` 表记录上传元信息，`qa_logs` 表记录 Agent 问答与 debug 快照；重启后可在 UI/API 查看历史，但无法仅凭数据库记录恢复检索能力。
+- **FAISS v1 为后备路径**：主检索路径已迁移到 PostgreSQL + pgvector；FAISS 仍保留为进程内兼容实现。
+- **集合管理仍较轻量**：上传接口支持可选 `collection_id`，但 UI 中尚未提供完整 collection 管理页面。
 - **工业模型为演示 baseline**：predictive-maintenance-mini 使用 RandomForest + 小规模样本，**不可直接用于生产决策**；`/predict` 要求完整特征字段（如 `speed`、`humidity`）。
 - **LoRA 微调模型尚未接入**：生成与评估均依赖 DashScope 在线 API（`qwen-plus`），未加载本地微调权重。
 - **faithfulness 评估较慢**：RAGAS `Faithfulness` 需额外 LLM 判分，多样本并发时易超时；脚本在 `metrics=faithfulness` 时会自动切换逐条串行模式。
@@ -517,7 +590,7 @@ make docker-up && make docker-verify   # 无 make run；Docker 映射 :8010
 
 ## 后续计划
 
-- [ ] **FAISS / 向量持久化** — 将 FAISS 索引落盘或接入专用向量数据库，支持重启后无需重新上传即可问答
+- [x] **pgvector 向量持久化** — PostgreSQL + pgvector 保存 chunks 与 embeddings，支持重启后无需重新上传即可检索
 - [ ] **接入微调模型** — 将 [llm-finetune-for-manufacturing](https://github.com/ShihangPENg-afk/llm-finetune-for-manufacturing) 产出的 LoRA 权重接入 Agent 生成节点（**尚未接入**）
 - [ ] **增加评估样本** — 扩充 `evals/ragas_samples.json`，覆盖多跳推理与结构类问题
 - [x] **CI 基础流水线** — GitHub Actions 运行离线单元测试与编译检查（见 `.github/workflows/ci.yml`）
@@ -540,7 +613,8 @@ rag-agentic-system/
 │   ├── agent/                   # LangGraph 状态图与节点
 │   ├── services/                # 上传、索引、问答服务
 │   ├── tools/                   # Agent 工具（含 machine_health_tool.py）
-│   └── vectordb/faiss_store.py  # FAISS 封装
+│   ├── retrievers/              # FAISS v1 / pgvector v2 检索实现
+│   └── vectordb/faiss_store.py  # FAISS v1 后备封装
 ├── ui/
 │   ├── streamlit_app.py         # Streamlit 演示 UI
 │   └── requirements-ui.txt      # UI 独立依赖

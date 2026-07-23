@@ -1,6 +1,7 @@
 from typing import Any, Dict, List, Optional, Tuple
+from uuid import UUID
 
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 class HistoryTurn(BaseModel):
     user: str
@@ -10,12 +11,25 @@ class HistoryTurn(BaseModel):
 class QuestionRequest(BaseModel):
     question: str
     knowledge_base_id: str
+    document_id: Optional[str] = None
+    collection_id: Optional[str] = None
+    session_id: Optional[UUID] = None
     history: List[HistoryTurn] = Field(default_factory=list)
     debug: bool = False
+
+    @model_validator(mode="after")
+    def normalize_document_filter(self):
+        if self.document_id is None:
+            self.document_id = self.knowledge_base_id
+        elif self.document_id != self.knowledge_base_id:
+            raise ValueError("document_id must match knowledge_base_id")
+        return self
+
 
 class AnswerResponse(BaseModel):
     answer: str
     knowledge_base_id: str
+    session_id: Optional[UUID] = None
     history: List[Tuple[str, str]] = Field(default_factory=list)
     debug: Optional[Dict[str, Any]] = None
     mode: str = "agent"
@@ -46,6 +60,7 @@ class AnswerResponse(BaseModel):
 
 class SingleUploadResponse(BaseModel):
     knowledge_base_id: str
+    collection_id: Optional[str] = None
     status: str
     message: str
     chunks_count: int
@@ -55,6 +70,7 @@ class SingleUploadResponse(BaseModel):
 class BatchUploadResult(BaseModel):
     filename: str
     knowledge_base_id: Optional[str] = None
+    collection_id: Optional[str] = None
     status: str
     message: str
     chunks_count: Optional[int] = None
@@ -69,9 +85,14 @@ class BatchUploadResponse(BaseModel):
 class DocumentRecord(BaseModel):
     id: str
     knowledge_base_id: str
+    collection_id: Optional[str] = None
     filename: str
+    content_type: Optional[str] = None
+    file_size: Optional[int] = None
+    content_hash: Optional[str] = None
     chunks_count: int
     status: str
+    error_message: Optional[str] = None
     created_at: str
     updated_at: str
 
@@ -96,3 +117,23 @@ class QALogsListResponse(BaseModel):
     knowledge_base_id: str
     total: int
     qa_logs: List[QALogRecord]
+
+
+class RetrievalRequest(BaseModel):
+    query: str
+    document_id: Optional[UUID] = None
+    collection_id: Optional[UUID] = None
+    limit: int = Field(default=3, ge=1, le=20)
+
+
+class RetrievedChunkRecord(BaseModel):
+    chunk_id: str
+    document_id: str
+    collection_id: Optional[str] = None
+    score: float
+    content: str
+
+
+class RetrievalResponse(BaseModel):
+    total: int
+    chunks: List[RetrievedChunkRecord]

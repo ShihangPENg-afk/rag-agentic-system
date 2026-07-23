@@ -7,6 +7,10 @@ class ChatState(BaseModel):
     """
     # 知识库ID
     knowledge_base_id: str
+    # 当前用户 ID，用于 pgvector 检索权限过滤
+    user_id: Optional[str] = None
+    # 可选集合 ID，用于 pgvector collection 过滤
+    collection_id: Optional[str] = None
     # 用户问题
     user_query: str
     # 对话历史

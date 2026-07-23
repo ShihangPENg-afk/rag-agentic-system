@@ -9,51 +9,65 @@
 5. 模型回答
 """
 from typing import List, Optional, Tuple
+from uuid import UUID
 
 import dashscope
-import numpy as np
 from dashscope import Generation
 
 from app.core.config import (
     API_KEY,
     MODEL_NAME,
-    TOP_K,
-    FINAL_TOP_K,
-    DISTANCE_THRESHOLD,
-    SCORE_THRESHOLD_PERCENT,
     MAX_PROMPT_LENGTH,
     SAFE_RESERVE_LENGTH,
     CONTEXT_TRUNCATE_STEP,
 )
-from app.services.index_service import get_embeddings
+from app.retrievers.retriever_v1_faiss import retrieve_relevant_chunks_faiss
+from app.retrievers.retriever_v2_pgvector import retrieve_relevant_chunks_pgvector
 from utils.utils import check_network
 dashscope.api_key = API_KEY
 
 from app.schemas.chat_state import ChatState
-from app.services.kb_registry import get_knowledge_base, get_all_ids
+from app.services.kb_registry import get_knowledge_base
 
 
-def build_chat_state_from_request(request) -> ChatState:
+def build_chat_state_from_request(request, user_id: UUID | str | None = None) -> ChatState:
     history_pairs = [(item.user, item.assistant) for item in request.history]
     return ChatState(
         knowledge_base_id=request.knowledge_base_id,
+        user_id=str(user_id) if user_id is not None else None,
+        collection_id=str(request.collection_id) if request.collection_id is not None else None,
         user_query=request.question,
         history_pairs=history_pairs,
     )
 
 def chat_with_rag_state(state: ChatState):
-    rag_system = get_knowledge_base(state.knowledge_base_id)
-    if rag_system is None:
-        available_ids = get_all_ids()
-        raise LookupError(
-            f"知识库不存在: {state.knowledge_base_id}。可用知识库ID: {available_ids[:5]}..."
+    valid_turns = list(state.history_pairs or [])
+    enhanced_query = enhance_query_with_history(state.user_query, valid_turns)
+
+    relevant_texts, error, _results = retrieve_relevant_chunks_pgvector(
+        knowledge_base_id=state.knowledge_base_id,
+        enhanced_query=enhanced_query,
+        user_id=state.user_id,
+        collection_id=state.collection_id,
+    )
+    if error is None:
+        return generate_answer(
+            user_query=state.user_query,
+            relevant_texts=relevant_texts,
+            valid_turns=valid_turns,
         )
 
-    answer, updated_history = rag_system.query(
-        user_query=state.user_query,
-        history=state.history_pairs,
-    )
-    return answer, updated_history
+    if error.startswith("📚"):
+        return error, valid_turns
+
+    rag_system = get_knowledge_base(state.knowledge_base_id)
+    if rag_system is not None:
+        return rag_system.query(
+            user_query=state.user_query,
+            history=state.history_pairs,
+        )
+
+    return error, valid_turns
 
 def normalize_history(history: Optional[list], max_history: int = 3) -> List[Tuple[str, str]]:
     """规范化对话历史"""
@@ -82,73 +96,7 @@ def enhance_query_with_history(user_query: str, valid_turns: List[Tuple[str, str
     return enhanced_query
 
 def retrieve_relevant_chunks(index, chunks: List[str], enhanced_query: str):
-    """
-    检索基础函数：
-    输入向量索引、文本块和增强后的问题，
-    返回最相关的文本片段。
-
-    这个函数既可以被 answer_with_index() 使用，
-    也可以被 tools/retrieval_tools.py 复用。
-    """
-    if index is None or getattr(index, "ntotal", 0) == 0:
-        return [], "⚠️ 知识库未初始化或为空，请先上传文档。"
-
-    try:
-        q_embeddings, _ = get_embeddings([enhanced_query])
-        if not q_embeddings:
-            return [], "⚠️ 问题向量化失败，请稍后重试"
-
-        query_vector = np.array(q_embeddings, dtype=np.float32)
-
-    except Exception as e:
-        return [], f"⚠️ 向量化服务异常: {e}"
-
-    try:
-        distances, indices = index.search(query_vector, TOP_K)
-        candidate_results = []
-
-        # 第一层过滤：距离阈值
-        for i, idx in enumerate(indices[0]):
-            if idx < len(chunks):
-                dist = distances[0][i]
-                if dist < DISTANCE_THRESHOLD:
-                    candidate_results.append((dist, chunks[idx]))
-
-        # 如果严格阈值下没有结果，则退化使用最相近的前三条
-        if not candidate_results:
-            print("⚠️ 无满足严格阈值的片段，使用最相关的前3条")
-            for i, idx in enumerate(indices[0][:3]):
-                if idx < len(chunks):
-                    candidate_results.append((distances[0][i], chunks[idx]))
-
-        # 第二层过滤：分数百分比过滤
-        if candidate_results:
-            min_dist = candidate_results[0][0]
-            threshold = min_dist + (1 - SCORE_THRESHOLD_PERCENT) * 10
-
-            filtered = []
-            for dist, text in candidate_results:
-                if dist <= threshold:
-                    filtered.append((dist, text))
-            candidate_results = filtered
-
-        # 按距离升序排序
-        candidate_results.sort(key=lambda x: x[0])
-
-        # 精排，保留最终片段
-        relevant_texts = [item[1] for item in candidate_results[:FINAL_TOP_K]]
-
-        if not relevant_texts:
-            return [], "📚 未在文档中找到相关信息，请尝试换个问题。"
-
-        print(f"✅ 精排完成：保留 {len(relevant_texts)} 条高相关片段（无无关内容）")
-        for idx, text in enumerate(relevant_texts, 1):
-            print(f"  {idx}. {text[:100]}...")
-
-        return relevant_texts, None
-
-    except Exception as e:
-        return [], f"⚠️ 检索服务异常: {e}"
+    return retrieve_relevant_chunks_faiss(index, chunks, enhanced_query)
 
 
 def build_history_section(valid_turns: List[Tuple[str, str]]) -> str:
@@ -273,3 +221,65 @@ def answer_with_index(index, chunks: List[str], user_query: str, history: Option
         valid_turns=valid_turns,
         max_history=max_history,
     )
+
+
+def persist_chat_exchange(
+    user_id: UUID,
+    question: str,
+    answer: str,
+    session_id: UUID | str | None = None,
+) -> dict:
+    """
+    保存一轮用户问题和 AI 回答。
+
+    不参与 RAG 推理，只负责把问答结果落到 sessions/messages。
+    """
+    from app.repositories.chat_repository import (
+        create_chat_session,
+        create_message,
+        get_chat_session_by_id,
+        get_chat_session_by_user,
+    )
+
+    if session_id is None:
+        title = question.strip()[:80] or "新会话"
+        session = create_chat_session(user_id=user_id, title=title)
+        session_id = session["id"]
+    else:
+        session = get_chat_session_by_user(session_id=session_id, user_id=user_id)
+        if session is None:
+            if get_chat_session_by_id(session_id=session_id) is not None:
+                raise PermissionError("会话不属于当前用户")
+            raise LookupError("会话不存在或无权访问")
+
+    create_message(session_id=session_id, role="user", content=question)
+    create_message(session_id=session_id, role="assistant", content=answer)
+    return get_chat_session_by_user(session_id=session_id, user_id=user_id) or session
+
+
+def list_user_chat_sessions(user_id: UUID, limit: int = 50) -> list[dict]:
+    from app.repositories.chat_repository import list_chat_sessions_by_user
+
+    return list_chat_sessions_by_user(user_id=user_id, limit=limit)
+
+
+def list_user_session_messages(
+    user_id: UUID,
+    session_id: UUID | str,
+    limit: int = 200,
+) -> list[dict]:
+    from app.repositories.chat_repository import (
+        get_chat_session_by_id,
+        list_messages_by_session_and_user,
+    )
+
+    messages = list_messages_by_session_and_user(
+        session_id=session_id,
+        user_id=user_id,
+        limit=limit,
+    )
+    if messages is None:
+        if get_chat_session_by_id(session_id=session_id) is not None:
+            raise PermissionError("会话不属于当前用户")
+        raise LookupError("会话不存在或无权访问")
+    return messages

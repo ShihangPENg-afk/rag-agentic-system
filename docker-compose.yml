@@ -1,18 +1,33 @@
 services:
+  redis:
+    container_name: rag-agentic-system-redis
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
   postgres:
     container_name: rag-agentic-system-postgres
-    image: postgres:16-alpine
+    image: pgvector/pgvector:pg16
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-ragagent}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ragagent_secret}
-      POSTGRES_DB: ${POSTGRES_DB:-ragagent}
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: rag_agent_db
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ragagent} -d ${POSTGRES_DB:-ragagent}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:?POSTGRES_USER is required} -d rag_agent_db"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -26,13 +41,17 @@ services:
     env_file:
       - .env
     environment:
-      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-ragagent}:${POSTGRES_PASSWORD:-ragagent_secret}@postgres:5432/${POSTGRES_DB:-ragagent}
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:?POSTGRES_USER is required}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/rag_agent_db
+      POSTGRES_DB: rag_agent_db
+      REDIS_URL: redis://redis:6379/0
       HEALTH_API_URL: http://host.docker.internal:8010
     volumes:
       - ./data:/app/data
       - ./evals/out:/app/evals/out
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
@@ -50,3 +69,4 @@ services:
 
 volumes:
   postgres_data:
+  redis_data:
