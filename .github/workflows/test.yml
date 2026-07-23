@@ -10,7 +10,7 @@ jobs:
 
     services:
       postgres:
-        image: postgres:16
+        image: pgvector/pgvector:pg16
         env:
           POSTGRES_USER: rag_agent_user
           POSTGRES_PASSWORD: rag_agent_password
@@ -35,7 +35,7 @@ jobs:
 
     env:
       PYTHONPATH: .
-      DASHSCOPE_API_KEY: ci-test-placeholder
+      EMBEDDING_PROVIDER: fake
       JWT_SECRET_KEY: ci-test-jwt-secret
       DATABASE_URL: postgresql+psycopg2://rag_agent_user:rag_agent_password@localhost:5432/rag_agent_test
       TEST_DATABASE_URL: postgresql+psycopg2://rag_agent_user:rag_agent_password@localhost:5432/rag_agent_test

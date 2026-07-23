@@ -14,7 +14,9 @@ DASHSCOPE_BASE_URL = os.getenv(
     "DASHSCOPE_BASE_URL",
     "https://dashscope.aliyuncs.com/compatible-mode/v1",
 ).strip()
-if not API_KEY:
+EMBEDDING_PROVIDER = os.getenv("EMBEDDING_PROVIDER", "dashscope").strip().lower()
+EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL_NAME", "text-embedding-v1").strip()
+if not API_KEY and EMBEDDING_PROVIDER != "fake":
     raise RuntimeError("缺少环境变量 DASHSCOPE_API_KEY")
 
 # 文本处理配置

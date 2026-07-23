@@ -9,6 +9,7 @@ from __future__ import annotations
 import re
 from typing import List
 
+from app.retrievers.retriever_v2_pgvector import list_persisted_chunks_for_document
 from app.services.kb_registry import get_knowledge_base
 from app.tools.common import kb_not_found_message
 
@@ -68,16 +69,34 @@ def _sanitize_heading(text: str) -> str:
     return text.strip(" -—")
 
 
-def list_headings_tool(knowledge_base_id: str, limit: int = 20) -> str:
+def _load_chunks(knowledge_base_id: str, user_id: str | None = None) -> list[str] | None:
+    persisted = list_persisted_chunks_for_document(
+        knowledge_base_id=knowledge_base_id,
+        user_id=user_id,
+    )
+    if persisted:
+        return [item["content"] for item in persisted]
+
+    rag = get_knowledge_base(knowledge_base_id)
+    if rag is None:
+        return None
+    return rag.chunks
+
+
+def list_headings_tool(
+    knowledge_base_id: str,
+    limit: int = 20,
+    user_id: str | None = None,
+) -> str:
     """
     启发式提取标题。
     当前仍基于 chunks 文本内容做规则识别，不依赖原始 PDF 目录结构。
     """
-    rag = get_knowledge_base(knowledge_base_id)
-    if rag is None:
+    chunks = _load_chunks(knowledge_base_id, user_id=user_id)
+    if chunks is None:
         return kb_not_found_message(knowledge_base_id)
 
-    if not rag.chunks:
+    if not chunks:
         return "## 章节标题\n未找到可用文本块。"
 
     headings: List[str] = []
@@ -86,7 +105,7 @@ def list_headings_tool(knowledge_base_id: str, limit: int = 20) -> str:
     chapter_pattern = re.compile(r"(第\s*\d+\s*章[^\n]{1,40})")
     section_pattern = re.compile(r"(\d+(?:\.\d+){1,2}\s*[^\n]{1,40})")
 
-    for chunk in rag.chunks:
+    for chunk in chunks:
         chunk = _normalize_text(chunk)
 
         chapter_matches = chapter_pattern.findall(chunk)
@@ -125,16 +144,16 @@ def list_headings_tool(knowledge_base_id: str, limit: int = 20) -> str:
     return "\n".join(lines)
 
 
-def count_tables_tool(knowledge_base_id: str) -> str:
+def count_tables_tool(knowledge_base_id: str, user_id: str | None = None) -> str:
     """
     启发式统计“表格迹象”数量。
     说明：这不是精确表格解析，只是根据文本模式粗略估计。
     """
-    rag = get_knowledge_base(knowledge_base_id)
-    if rag is None:
+    chunks = _load_chunks(knowledge_base_id, user_id=user_id)
+    if chunks is None:
         return kb_not_found_message(knowledge_base_id)
 
-    if not rag.chunks:
+    if not chunks:
         return "## 表格统计\n知识库为空，无法统计。"
 
     table_title_hits = 0
@@ -146,7 +165,7 @@ def count_tables_tool(knowledge_base_id: str) -> str:
     pipe_pattern = re.compile(r"\|.+\|")
     multi_space_columns_pattern = re.compile(r"\S+\s{2,}\S+\s{2,}\S+")
 
-    for chunk in rag.chunks:
+    for chunk in chunks:
         chunk = _normalize_text(chunk)
 
         title_matches = table_title_pattern.findall(chunk)

@@ -23,7 +23,7 @@ except ImportError:
 from app.core.config import API_KEY, DASHSCOPE_BASE_URL, MODEL_NAME
 from app.schemas.api_models import QuestionRequest
 from app.services.agent_chat_service import chat_with_agent_state
-from app.services.index_service import get_embeddings
+from app.services.embedding_service import get_embeddings
 from app.services.upload_service import create_knowledge_base_from_saved_pdf
 
 

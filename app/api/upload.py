@@ -5,8 +5,9 @@ import tempfile
 import uuid
 from pathlib import PurePosixPath
 from typing import List
+from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 
 from app.api.routes_auth import get_current_user
 from app.models.user import User
@@ -72,6 +73,7 @@ def _assert_pdf_magic_and_nonempty(path: str) -> None:
 @router.post("/upload_pdf/", response_model=SingleUploadResponse, summary="上传单个PDF并构建知识库")
 async def upload_single_pdf(
     file: UploadFile = File(...),
+    collection_id: UUID | None = Query(default=None, description="可选：目标知识库集合 ID"),
     current_user: User = Depends(get_current_user),
 ):
     temp_dir: str | None = None
@@ -103,12 +105,15 @@ async def upload_single_pdf(
             temp_pdf_path,
             safe_filename,
             user_id=current_user.id,
+            collection_id=collection_id,
             content_type=file.content_type or "application/pdf",
         )
         return result
 
     except HTTPException:
         raise
+    except LookupError as e:
+        raise HTTPException(status_code=404, detail=str(e))
     except OSError as e:
         logger.exception("保存或读取上传 PDF 时发生系统错误: %s", e)
         raise HTTPException(status_code=500, detail="保存或读取上传文件失败，请稍后重试")
@@ -130,6 +135,7 @@ async def upload_single_pdf(
 @router.post("/upload_pdfs/", response_model=BatchUploadResponse, summary="批量上传多个PDF")
 async def upload_multiple_pdfs(
     files: List[UploadFile] = File(...),
+    collection_id: UUID | None = Query(default=None, description="可选：目标知识库集合 ID"),
     current_user: User = Depends(get_current_user),
 ):
     if not files:
@@ -164,11 +170,13 @@ async def upload_multiple_pdfs(
                 temp_pdf_path,
                 safe_filename,
                 user_id=current_user.id,
+                collection_id=collection_id,
                 content_type=file.content_type or "application/pdf",
             )
             result = BatchUploadResult(
                 filename=safe_filename,
                 knowledge_base_id=result_data["knowledge_base_id"],
+                collection_id=result_data.get("collection_id"),
                 status=result_data["status"],
                 message=result_data["message"],
                 chunks_count=result_data["chunks_count"],

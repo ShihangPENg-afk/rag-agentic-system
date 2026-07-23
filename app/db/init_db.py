@@ -1,10 +1,12 @@
-import app.models.user  # noqa: F401 — register User model for Document FK resolution
-import app.models.document  # noqa: F401 — register Document model with Base.metadata
-import app.models.qa_log  # noqa: F401 — register QALog model with Base.metadata
+import app.models  # noqa: F401 — register SQLAlchemy models with Base.metadata
 from app.db.database import Base, engine
+from sqlalchemy import text
 
 
 def create_tables() -> None:
+    with engine.begin() as connection:
+        if connection.dialect.name == "postgresql":
+            connection.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
     Base.metadata.create_all(bind=engine)
 
 

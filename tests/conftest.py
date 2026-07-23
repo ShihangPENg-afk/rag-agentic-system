@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import create_engine, event
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.ext.compiler import compiles
@@ -23,7 +24,7 @@ if TEST_DATABASE_URL is None:
     TEST_DATABASE_URL = f"sqlite:///{TEST_DB_PATH}"
 
 os.environ["DATABASE_URL"] = TEST_DATABASE_URL
-os.environ.setdefault("DASHSCOPE_API_KEY", "test-dashscope-key")
+os.environ["EMBEDDING_PROVIDER"] = "fake"
 os.environ.setdefault("JWT_SECRET_KEY", "test-jwt-secret")
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379/15")
 
@@ -36,6 +37,11 @@ def _compile_jsonb_sqlite(type_, compiler, **kw):
 @compiles(UUID, "sqlite")
 def _compile_uuid_sqlite(type_, compiler, **kw):
     return "CHAR(32)"
+
+
+@compiles(Vector, "sqlite")
+def _compile_vector_sqlite(type_, compiler, **kw):
+    return "JSON"
 
 
 from app.db import database as database_module  # noqa: E402
@@ -78,6 +84,9 @@ session_module.SessionLocal.configure(bind=test_engine)
 @pytest.fixture(autouse=True)
 def reset_test_database():
     app.dependency_overrides.clear()
+    if not IS_SQLITE_TEST_DB:
+        with test_engine.begin() as connection:
+            connection.exec_driver_sql("CREATE EXTENSION IF NOT EXISTS vector")
     Base.metadata.drop_all(bind=test_engine)
     Base.metadata.create_all(bind=test_engine)
     yield

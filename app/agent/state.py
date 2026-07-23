@@ -56,6 +56,10 @@ class AgentState(TypedDict, total=False):
     messages: Annotated[list[AnyMessage], add_messages]
     # 当前会话绑定的知识库 ID，供 retrieve_chunks_tool 等检索与文档工具使用
     knowledge_base_id: str
+    # 当前用户 ID，供 pgvector 检索做权限过滤
+    user_id: str
+    # 当前检索限定的集合 ID，供 pgvector collection 过滤
+    collection_id: str
     # 结构化多轮历史：(用户问题, 助手回答) 列表，供 Memory 节点拼 prompt 或做摘要输入
     chat_history_pairs: list[tuple[str, str]]
     # 本轮待回答的用户问题（可与 messages 中最后一条 human 对齐，便于 Memory/RAG 节点单独读取）

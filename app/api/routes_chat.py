@@ -17,7 +17,7 @@ from app.services.chat_service import (
     list_user_session_messages,
     persist_chat_exchange,
 )
-from app.services.document_service import ensure_user_document
+from app.services.document_service import validate_user_retrieval_filters
 from utils.utils import check_network
 
 logger = logging.getLogger(__name__)
@@ -56,12 +56,16 @@ async def ask_question(
     current_user: User = Depends(enforce_chat_rate_limit),
 ):
     try:
-        ensure_user_document(request.knowledge_base_id, current_user.id)
+        validate_user_retrieval_filters(
+            user_id=current_user.id,
+            document_id=request.document_id,
+            collection_id=request.collection_id,
+        )
 
         if not check_network():
             raise HTTPException(status_code=500, detail="网络连接异常，无法调用AI服务")
 
-        result = chat_with_agent_state(request)
+        result = chat_with_agent_state(request, user_id=current_user.id)
         session = persist_chat_exchange(
             user_id=current_user.id,
             question=request.question,
@@ -102,12 +106,16 @@ async def ask_question_rag(
     current_user: User = Depends(enforce_chat_rate_limit),
 ):
     try:
-        ensure_user_document(request.knowledge_base_id, current_user.id)
+        validate_user_retrieval_filters(
+            user_id=current_user.id,
+            document_id=request.document_id,
+            collection_id=request.collection_id,
+        )
 
         if not check_network():
             raise HTTPException(status_code=500, detail="网络连接异常，无法调用AI服务")
 
-        state = build_chat_state_from_request(request)
+        state = build_chat_state_from_request(request, user_id=current_user.id)
         answer, updated_history = chat_with_rag_state(state)
         session = persist_chat_exchange(
             user_id=current_user.id,
