@@ -1,0 +1,61 @@
+name: Pytest
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: rag_agent_user
+          POSTGRES_PASSWORD: rag_agent_password
+          POSTGRES_DB: rag_agent_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U rag_agent_user -d rag_agent_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      PYTHONPATH: .
+      DASHSCOPE_API_KEY: ci-test-placeholder
+      JWT_SECRET_KEY: ci-test-jwt-secret
+      DATABASE_URL: postgresql+psycopg2://rag_agent_user:rag_agent_password@localhost:5432/rag_agent_test
+      TEST_DATABASE_URL: postgresql+psycopg2://rag_agent_user:rag_agent_password@localhost:5432/rag_agent_test
+      REDIS_URL: redis://localhost:6379/0
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install -r requirements-dev.txt
+
+      - name: Run pytest
+        run: python -m pytest
