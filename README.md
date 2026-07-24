@@ -534,6 +534,98 @@ python evals/run_ragas_eval.py \
 
 ---
 
+## RAG Evaluation
+
+这部分和上面的 RAGAS 评估互补：
+
+- **RAGAS** 关注“回答质量”
+- **RAG Evaluation** 关注“检索质量”
+
+如果检索没召回到对的 chunk，后面的生成再流畅也很容易缺少依据，所以这部分更适合做检索回归测试和面试演示。
+
+### 为什么需要评估 RAG
+
+- 检索是 RAG 的第一道门，召回质量直接影响最终回答
+- 改 chunking、embedding、BM25、fusion 或 rerank 时，需要可重复的回归指标
+- 工业运维场景里，很多问题依赖关键词命中，比如报警名、零件名、维护动作和手册章节
+
+### `golden_questions.jsonl` 是什么
+
+文件路径：[`evals/golden_questions.jsonl`](evals/golden_questions.jsonl)
+
+它是一个 JSONL 评估集，每行一条样本，包含：
+
+- `question`
+- `expected_keywords`
+- `expected_doc_id` 或 `expected_source`
+
+用途是做检索评估，不是直接给模型当标准答案。
+
+### 如何运行评估脚本
+
+脚本路径：[`evals/evaluate_retrieval.py`](evals/evaluate_retrieval.py)
+
+默认会分别跑：
+
+- `v1` baseline：pgvector dense retrieval
+- `v2` hybrid：BM25 + pgvector，支持 `use_rerank`
+
+运行示例：
+
+```bash
+EVAL_USER_ID=<user_id> python3 evals/evaluate_retrieval.py --top-k 5
+```
+
+可选参数：
+
+```bash
+EVAL_USER_ID=<user_id> python3 evals/evaluate_retrieval.py \
+  --collection-id <collection_id> \
+  --document-id <document_id> \
+  --top-k 5 \
+  --use-rerank
+```
+
+如果当前环境没有 LLM 评估条件，可以只跑检索指标；`--with-ragas` 是可选项。
+
+脚本会输出：
+
+- `evals/results_v1.json`
+- `evals/results_v2.json`
+
+### v1 baseline 和 v2 hybrid + rerank 的区别
+
+- **v1 baseline**：只用 pgvector dense retrieval，偏语义相似度
+- **v2 hybrid**：BM25 关键词召回 + pgvector 语义召回，再做融合排序
+- **v2 + rerank**：在 hybrid 候选结果上再做二次排序，保留 `rerank_score`
+
+简单说，v1 更像“语义找相近内容”，v2 更像“语义 + 关键词 双通道召回，再精排”。
+
+### 报告文件在哪里
+
+报告路径：[`evals/report_v1_vs_v2.md`](evals/report_v1_vs_v2.md)
+
+如果你先跑完评估脚本，再打开这个报告，就能把结果文件里的指标对照着看。
+
+### 面试官可以如何复现
+
+1. 准备一批已入库的 PDF 文档，确保能拿到当前用户的 `user_id`
+2. 跑评估脚本：
+
+```bash
+EVAL_USER_ID=<user_id> python3 evals/evaluate_retrieval.py --top-k 5
+```
+
+3. 查看结果文件：
+   - `evals/results_v1.json`
+   - `evals/results_v2.json`
+4. 打开对比报告：
+   - `evals/report_v1_vs_v2.md`
+
+如果面试官想看更细的对比，可以固定同一个 `document_id` 或 `collection_id`，这样 v1 和 v2 就是在同一批文档上比较，更容易观察差异。
+
+---
+
 ## 与 predictive-maintenance-mini 的关系
 
 **[predictive-maintenance-mini](https://github.com/ShihangPENg-afk/predictive-maintenance-mini)** 是独立的工业预测仓库：EDA → RandomForest 训练 → MLflow → FastAPI 推理（`:8010`）。**非生产级 baseline 模型**，用于演示「传感器特征 → 质量/风险分类」的服务化流程。
@@ -620,8 +712,11 @@ rag-agentic-system/
 │   └── requirements-ui.txt      # UI 独立依赖
 ├── app/db/                      # PostgreSQL ORM 与 repository
 ├── evals/
-│   ├── run_ragas_eval.py        # RAGAS 评估脚本
-│   ├── ragas_samples.json       # 评估样本
+│   ├── run_ragas_eval.py        # RAGAS 回答质量评估脚本
+│   ├── evaluate_retrieval.py    # 检索评估脚本（v1 / v2）
+│   ├── ragas_samples.json       # RAGAS 评估样本
+│   ├── golden_questions.jsonl   # 检索 golden set
+│   ├── report_v1_vs_v2.md       # v1 vs v2 检索评估报告
 │   └── out/                     # 本地评估报告输出（gitignore）
 ├── tests/
 │   └── test_offline.py          # 离线单元测试（CI 使用）
