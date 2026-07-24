@@ -28,6 +28,7 @@ def invoke_maintenance_agent(
     top_k: int = 5,
     use_rerank: bool = True,
     sensor_data: dict[str, Any] | None = None,
+    confirm_create_ticket: bool = False,
 ) -> dict[str, Any]:
     """Invoke the maintenance graph and persist the chat exchange when possible."""
     state = {
@@ -43,6 +44,7 @@ def invoke_maintenance_agent(
         "top_k": top_k,
         "use_rerank": use_rerank,
         "sensor_data": sensor_data or {},
+        "confirm_create_ticket": confirm_create_ticket,
     }
 
     result = get_maintenance_graph().invoke(state)
@@ -67,5 +69,6 @@ def invoke_maintenance_agent(
         "confidence": result.get("confidence", 0.0),
         "maintenance_plan": result.get("maintenance_plan", []),
         "ticket": result.get("ticket"),
+        "confirmation_required": result.get("confirmation_required", False),
         "debug": result.get("debug", {}),
     }

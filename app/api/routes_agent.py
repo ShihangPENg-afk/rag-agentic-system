@@ -29,6 +29,7 @@ class MaintenanceAgentRequest(BaseModel):
     top_k: int = Field(default=5, ge=1, le=20)
     use_rerank: bool = True
     sensor_data: dict[str, Any] = Field(default_factory=dict)
+    confirm_create_ticket: bool = False
 
 
 class MaintenanceAgentResponse(BaseModel):
@@ -41,6 +42,7 @@ class MaintenanceAgentResponse(BaseModel):
     confidence: float = 0.0
     maintenance_plan: list[str] = Field(default_factory=list)
     ticket: dict[str, Any] | None = None
+    confirmation_required: bool = False
     debug: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -71,6 +73,7 @@ async def invoke_agent(
             top_k=request.top_k,
             use_rerank=request.use_rerank,
             sensor_data=request.sensor_data,
+            confirm_create_ticket=request.confirm_create_ticket,
         )
         return result
     except PermissionError as exc:

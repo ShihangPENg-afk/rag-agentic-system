@@ -29,6 +29,10 @@ class MaintenanceAgentState(TypedDict, total=False):
     retrieve_query: str
     need_retrieval: bool
     need_prediction: bool
+    confirm_create_ticket: bool
+    ticket_confirmed: bool
+    confirmation_required: bool
+    confirmation_message: str
 
     retrieved_chunks: list[dict[str, Any]]
     sources: list[dict[str, Any]]
