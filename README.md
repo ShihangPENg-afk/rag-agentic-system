@@ -447,6 +447,71 @@ curl -X POST "http://127.0.0.1:8000/ask_rag/" \
 
 响应中 `mode` 为 `"rag"`，不走 Agent 工具链，无 `debug` 字段。
 
+### 运维 Agent — `POST /agent/invoke` / `POST /agent/stream`
+
+工业运维场景下可直接调用专用 Agent：
+
+```bash
+curl -X POST "http://127.0.0.1:8000/agent/invoke" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_input": "请查询维护手册并检查设备状态",
+    "machine_id": "MACHINE-001",
+    "sensor_data": {"temperature": 70},
+    "confirm_create_ticket": false
+  }'
+```
+
+当 `risk_level` 为 `high` 时，接口不会直接创建工单，而是返回：
+
+- `confirmation_required: true`
+- `recommended_action`
+- `decision: "pending"`
+- `trace_id`
+
+用户确认或拒绝后，再调用 `/agent/confirm`：
+
+```bash
+curl -X POST "http://127.0.0.1:8000/agent/confirm" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "trace_id": "<上一步返回的 trace_id>",
+    "decision": "confirmed"
+  }'
+```
+
+拒绝创建工单：
+
+```bash
+curl -X POST "http://127.0.0.1:8000/agent/confirm" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "trace_id": "<上一步返回的 trace_id>",
+    "decision": "declined"
+  }'
+```
+
+确认后才会调用 `create_ticket_mock`；拒绝时会记录 `decision=declined`，不会创建工单。
+
+`/agent/invoke` 会返回 `trace_id`，并把每个节点的 trace 记录写入结构化日志 logger `agent_traces`。单条 trace 包含：
+
+- `node_name`
+- `tool_name`
+- `input_summary`
+- `output_summary`
+- `latency_ms`
+- `error`
+
+这类 trace 的作用主要有三点：
+
+1. 排查 Agent 为什么走了某条分支
+2. 对比不同节点耗时，找慢点
+3. 为后续接入 LangSmith 或 Langfuse 预留统一出口
+
+当前没有接 LangSmith / Langfuse，但如果后续要接，只需要把 `AgentTraceRecorder.record()` 的输出 sink 替换掉即可。
+
+`/agent/stream` 会用 SSE 流式输出同一条执行链路，适合直接用 `curl -N` 观察节点过程。
+
 ### 设备健康预测 — Agent 触发 `check_machine_health`
 
 需先 `make smoke` 或上传 PDF 获得 `knowledge_base_id`；工业 API 需已在 `:8010` 运行（见 [4.1 双服务联动](#41-双服务联动rag-agentic-system--predictive-maintenance-mini)）。
@@ -476,6 +541,9 @@ curl -X POST "http://127.0.0.1:8000/ask/" \
 | `PUT` | `/documents/{document_id}` | 替换当前用户文档内容 |
 | `DELETE` | `/documents/{document_id}` | 删除当前用户文档并同步删除 chunks / embeddings |
 | `GET` | `/qa_logs/?knowledge_base_id=...` | 按知识库查询历史问答（PostgreSQL） |
+| `POST` | `/agent/invoke` | 运维 Agent 普通调用（返回 `trace_id`） |
+| `POST` | `/agent/confirm` | 确认或拒绝高风险运维动作 |
+| `POST` | `/agent/stream` | 运维 Agent SSE 流式调用 |
 | `DELETE` | `/knowledge_base/{kb_id}` | 删除指定知识库（仅内存，不删 PG 记录） |
 | `DELETE` | `/clear_all_knowledge_bases` | 清空所有内存知识库 |
 

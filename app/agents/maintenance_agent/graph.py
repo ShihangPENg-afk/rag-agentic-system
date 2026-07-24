@@ -6,6 +6,7 @@ from langgraph.graph import END, START, StateGraph
 
 from app.agents.maintenance_agent import tools
 from app.agents.maintenance_agent.state import MaintenanceAgentState
+from app.services.agent_trace_service import run_node_with_trace
 
 
 MANUAL_MARKERS = (
@@ -23,8 +24,6 @@ MANUAL_MARKERS = (
     "检查",
 )
 HEALTH_MARKERS = ("状态", "风险", "预测", "健康", "传感器", "温度", "振动", "压力", "电流", "异常")
-CONFIRM_TICKET_MARKERS = ("确认创建工单", "创建工单", "开工单", "建工单", "同意创建", "提交工单")
-DECLINE_TICKET_MARKERS = ("不创建工单", "不要创建工单", "无需创建工单", "先不创建", "暂不创建")
 HIGH_RISK_LEVELS = {"high", "critical"}
 
 
@@ -59,14 +58,6 @@ def _classify_question(question: str) -> str:
     return "general"
 
 
-def _ticket_confirmed(question: str, explicit_confirm: bool | None) -> bool:
-    if explicit_confirm is True:
-        return True
-    if any(marker in question for marker in DECLINE_TICKET_MARKERS):
-        return False
-    return any(marker in question for marker in CONFIRM_TICKET_MARKERS)
-
-
 def classify_intent(state: MaintenanceAgentState) -> dict[str, Any]:
     question = str(state.get("user_input") or "").strip()
     machine_id = str(state.get("machine_id") or "").strip()
@@ -88,7 +79,8 @@ def classify_intent(state: MaintenanceAgentState) -> dict[str, Any]:
         "retrieve_query": question,
         "need_retrieval": any(marker in question for marker in MANUAL_MARKERS),
         "need_prediction": bool(machine_id) or bool(state.get("sensor_data")) or any(marker in question for marker in HEALTH_MARKERS),
-        "ticket_confirmed": _ticket_confirmed(question, state.get("confirm_create_ticket")),
+        "ticket_confirmed": False,
+        "decision": "none",
         "risk_level": "unknown",
         "history": history,
         "errors": errors,
@@ -141,15 +133,24 @@ def generate_plan_node(state: MaintenanceAgentState) -> dict[str, Any]:
         "maintenance_plan": result.get("plan", []),
         "draft_answer": result.get("answer", ""),
         "risk_level": result.get("risk_level", state.get("risk_level", "unknown")),
+        "recommended_action": _recommended_action(result.get("plan", [])),
         "tools_used": _record_tools(state, "generate_plan_node", "generate_maintenance_plan"),
     }
 
 
+def _recommended_action(plan: list[str]) -> str:
+    if plan:
+        return str(plan[0])
+    return "建议补充设备状态、报警信息或传感器数据后再执行维护操作。"
+
+
 def require_confirmation_node(state: MaintenanceAgentState) -> dict[str, Any]:
-    message = "检测到高风险。创建工单前需要用户确认；确认后请设置 confirm_create_ticket=true 或明确回复创建工单。"
+    message = "检测到高风险。创建工单前需要用户通过 /agent/confirm 明确确认。"
     return {
         "confirmation_required": True,
         "confirmation_message": message,
+        "decision": "pending",
+        "recommended_action": state.get("recommended_action") or "建议先由工程师确认风险后再创建工单。",
         "tools_used": _record_tools(state, "require_confirmation_node"),
     }
 
@@ -166,6 +167,7 @@ def create_ticket_node(state: MaintenanceAgentState) -> dict[str, Any]:
     return {
         "ticket": ticket,
         "confirmation_required": False,
+        "decision": "confirmed",
         "tools_used": _record_tools(state, "create_ticket_node", "create_ticket_mock"),
     }
 
@@ -191,6 +193,8 @@ def final_response_node(state: MaintenanceAgentState) -> dict[str, Any]:
         "tools_used": _record_tools(state, "final_response_node"),
         "sources": list(state.get("sources", [])),
         "confidence": float(state.get("confidence", 0.0) or 0.0),
+        "recommended_action": state.get("recommended_action", ""),
+        "decision": state.get("decision", "none"),
         "debug": debug,
     }
 
@@ -216,20 +220,32 @@ def _after_plan(state: MaintenanceAgentState) -> str:
 
 
 def _after_confirmation(state: MaintenanceAgentState) -> str:
-    if state.get("ticket_confirmed"):
+    if state.get("from_confirm_endpoint") and state.get("ticket_confirmed"):
         return "create_ticket_node"
     return "final_response_node"
 
 
+def _traced_node(node_name: str, tool_name: str, node_fn):
+    def _wrapped(state: MaintenanceAgentState):
+        return run_node_with_trace(
+            state,
+            node_name=node_name,
+            tool_name=tool_name,
+            node_fn=node_fn,
+        )
+
+    return _wrapped
+
+
 def build_maintenance_graph():
     graph = StateGraph(MaintenanceAgentState)
-    graph.add_node("classify_intent", classify_intent)
-    graph.add_node("retrieve_manual_node", retrieve_manual_node)
-    graph.add_node("check_health_node", check_health_node)
-    graph.add_node("generate_plan_node", generate_plan_node)
-    graph.add_node("require_confirmation_node", require_confirmation_node)
-    graph.add_node("create_ticket_node", create_ticket_node)
-    graph.add_node("final_response_node", final_response_node)
+    graph.add_node("classify_intent", _traced_node("classify_intent", "classify_intent", classify_intent))
+    graph.add_node("retrieve_manual_node", _traced_node("retrieve_manual_node", "retrieve_manual", retrieve_manual_node))
+    graph.add_node("check_health_node", _traced_node("check_health_node", "check_machine_health", check_health_node))
+    graph.add_node("generate_plan_node", _traced_node("generate_plan_node", "generate_maintenance_plan", generate_plan_node))
+    graph.add_node("require_confirmation_node", _traced_node("require_confirmation_node", "human_confirmation", require_confirmation_node))
+    graph.add_node("create_ticket_node", _traced_node("create_ticket_node", "create_ticket_mock", create_ticket_node))
+    graph.add_node("final_response_node", _traced_node("final_response_node", "final_response", final_response_node))
 
     graph.add_edge(START, "classify_intent")
     graph.add_conditional_edges(

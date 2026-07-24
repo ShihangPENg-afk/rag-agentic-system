@@ -11,6 +11,8 @@ class MaintenanceAgentState(TypedDict, total=False):
     """Shared state for the maintenance workflow."""
 
     messages: Annotated[list[AnyMessage], add_messages]
+    trace_id: str
+    trace_recorder: Any
 
     user_id: str | None
     user_input: str
@@ -30,9 +32,12 @@ class MaintenanceAgentState(TypedDict, total=False):
     need_retrieval: bool
     need_prediction: bool
     confirm_create_ticket: bool
+    from_confirm_endpoint: bool
     ticket_confirmed: bool
     confirmation_required: bool
     confirmation_message: str
+    recommended_action: str
+    decision: str
 
     retrieved_chunks: list[dict[str, Any]]
     sources: list[dict[str, Any]]
