@@ -14,9 +14,16 @@ DASHSCOPE_BASE_URL = os.getenv(
     "DASHSCOPE_BASE_URL",
     "https://dashscope.aliyuncs.com/compatible-mode/v1",
 ).strip()
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "dashscope").strip().lower()
+LOCAL_LLM_BASE_URL = os.getenv("LOCAL_LLM_BASE_URL", "").strip()
+LOCAL_LLM_API_KEY = os.getenv("LOCAL_LLM_API_KEY", "").strip()
+LOCAL_LLM_MODEL = os.getenv("LOCAL_LLM_MODEL", "").strip()
+LOCAL_LLM_MOCK = os.getenv("LOCAL_LLM_MOCK", "false").strip().lower()
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434").strip()
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "").strip()
 EMBEDDING_PROVIDER = os.getenv("EMBEDDING_PROVIDER", "dashscope").strip().lower()
 EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL_NAME", "text-embedding-v1").strip()
-if not API_KEY and EMBEDDING_PROVIDER != "fake":
+if not API_KEY and (EMBEDDING_PROVIDER != "fake" or LLM_PROVIDER == "dashscope"):
     raise RuntimeError("缺少环境变量 DASHSCOPE_API_KEY")
 
 # rerank provider: mock(默认，便于离线/测试) 或 none(不调整顺序，仅补齐 rerank_score)

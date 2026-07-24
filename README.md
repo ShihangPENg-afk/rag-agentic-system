@@ -212,9 +212,21 @@ make env-check   # 检查 DASHSCOPE_API_KEY 是否已填入真实值
 
 ```env
 DASHSCOPE_API_KEY=你的_API_Key
+LLM_PROVIDER=dashscope          # dashscope 或 local
+MODEL_NAME=qwen-plus
 EMBEDDING_PROVIDER=dashscope   # 测试/离线可设为 fake
 EMBEDDING_MODEL_NAME=text-embedding-v1
 DASHSCOPE_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1   # 可选
+
+# local provider 占位配置；接入本地 OpenAI-compatible 服务时再填写
+LOCAL_LLM_BASE_URL=
+LOCAL_LLM_API_KEY=
+LOCAL_LLM_MODEL=
+LOCAL_LLM_MOCK=false
+
+# Ollama 本地模型接入示例；LLM_PROVIDER=local 且未配置 LOCAL_LLM_* 时使用
+OLLAMA_BASE_URL=http://127.0.0.1:11434
+OLLAMA_MODEL=
 
 # PostgreSQL + pgvector（文档元信息 / chunks / embeddings / QA 日志）
 POSTGRES_USER=rag_agent_user
@@ -233,6 +245,14 @@ REDIS_URL=redis://localhost:6379/0
 > 若已有 `.env` 但缺少 PostgreSQL 变量，可执行 `make env-init` 自动从 `.env.example` 补全。
 
 如果你只是跑测试或离线调试 embedding，可把 `EMBEDDING_PROVIDER` 设为 `fake`。这个模式不会调用真实 API，也不需要 `DASHSCOPE_API_KEY`。
+
+LLM 生成通过 `app/services/llm_provider.py` 统一抽象：
+
+- `LLM_PROVIDER=dashscope`：默认路径，使用 `DASHSCOPE_API_KEY`、`DASHSCOPE_BASE_URL`、`MODEL_NAME` 调用 DashScope OpenAI-compatible 接口。
+- `LLM_PROVIDER=local`：本地模型占位路径。若已启动本地 OpenAI-compatible 服务，填写 `LOCAL_LLM_BASE_URL` 与 `LOCAL_LLM_MODEL`；若没有真实模型，默认返回明确配置错误，也可以设置 `LOCAL_LLM_MOCK=true` 返回 mock response 以验证流程。
+- Ollama 示例：本机安装并启动 Ollama 后，可设置 `LLM_PROVIDER=local`、`OLLAMA_BASE_URL=http://127.0.0.1:11434`、`OLLAMA_MODEL=<本地模型名>`。当前实现调用 Ollama `/api/generate`，用于演示本地模型接入方式；如果 Ollama 未启动或模型不可用，会返回清晰错误信息。该路径不表示本地模型效果优于云端模型，效果需要按同一评估集单独对比。
+
+不要把 API key 写入代码；真实 key 只放在本地 `.env` 或部署平台的环境变量中。
 
 ### 2.1 启动 PostgreSQL + pgvector
 
@@ -736,6 +756,36 @@ make docker-up && make docker-verify   # 无 make run；Docker 映射 :8010
 
 - **当前 LoRA 微调模型尚未接入 rag-agentic-system**；问答生成仍使用 DashScope 在线 API（`qwen-plus`）。
 - **RAGAS 基线（faithfulness 0.8750、answer_relevancy 0.8858）仅属于 rag-agentic-system**，与微调实验无关。快照见 [docs/ragas_baseline.md](docs/ragas_baseline.md)。
+
+---
+
+## Fine-tuning Integration
+
+`llm-finetune-for-manufacturing` 是独立的领域微调流程验证模块，定位是跑通 **PDF 技术手册 → Alpaca 指令数据 → LoRA 训练配置 → adapter 输出** 的工程链路。它当前证明的是“微调流程可复现”，不是“已经训练出可替代云端模型的工业运维大模型”。
+
+主系统已通过 `LLM_PROVIDER` 预留 local model 接入口：
+
+- `LLM_PROVIDER=dashscope`：当前默认路径，调用 DashScope OpenAI-compatible 接口。
+- `LLM_PROVIDER=local`：本地模型接入口，可接 OpenAI-compatible 本地服务，也可通过 `OLLAMA_BASE_URL` / `OLLAMA_MODEL` 试接 Ollama。
+- `LOCAL_LLM_MOCK=true`：没有真实本地模型时，用 mock response 验证流程。
+
+RAG 和 LoRA 的分工：
+
+- **RAG** 负责动态知识：上传 PDF、切块、向量化、检索相关手册片段，并保留 sources / confidence / trace。手册更新时优先更新知识库，而不是重训模型。
+- **LoRA** 适合优化表达和格式：让模型更稳定地按“现象 → 风险 → 原因 → 检查步骤 → 维护建议”的工业运维格式回答，改善领域术语和指令遵循。
+
+当前 CPU 微调不夸大效果：CPU 环境只做小样本、少 epoch 的流程验证；训练 loss 或 adapter 产出不能直接证明线上问答效果提升。是否有效，需要在同一评估集上比较 `RAG + 云端模型`、`RAG + 本地基座模型`、`RAG + LoRA 模型` 的输出质量。
+
+未来如果有 GPU，正式接入路径建议：
+
+1. 扩充和清洗工业手册问答、维护步骤、报警处理样本。
+2. 划分 train / validation / test，保留未参与训练的评估集。
+3. 在 GPU 上完整训练 LoRA / QLoRA adapter，并记录训练配置与版本。
+4. 用 vLLM、TGI、Ollama 或 OpenAI-compatible 服务加载本地模型。
+5. 在主系统 `.env` 中切换 `LLM_PROVIDER=local`，配置 `LOCAL_LLM_BASE_URL` / `LOCAL_LLM_MODEL` 或 `OLLAMA_BASE_URL` / `OLLAMA_MODEL`。
+6. 重新跑 smoke test、RAGAS 和人工样例评估，再决定是否替换默认 provider。
+
+更详细的 RAG / LoRA 边界说明见 [docs/rag_vs_lora.md](docs/rag_vs_lora.md)。
 
 ---
 

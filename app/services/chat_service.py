@@ -11,12 +11,7 @@
 from typing import List, Optional, Tuple
 from uuid import UUID
 
-import dashscope
-from dashscope import Generation
-
 from app.core.config import (
-    API_KEY,
-    MODEL_NAME,
     MAX_PROMPT_LENGTH,
     SAFE_RESERVE_LENGTH,
     CONTEXT_TRUNCATE_STEP,
@@ -30,11 +25,9 @@ from app.retrievers.confidence import (
 )
 from app.retrievers.retriever_v2_hybrid import retrieve_relevant_chunks_hybrid
 from app.retrievers.retriever_v2_pgvector import retrieve_relevant_chunks_pgvector
-from utils.utils import check_network
-dashscope.api_key = API_KEY
-
 from app.schemas.chat_state import ChatState
 from app.services.kb_registry import get_knowledge_base
+from app.services.llm_provider import generate as generate_text
 
 
 def build_chat_state_from_request(request, user_id: UUID | str | None = None) -> ChatState:
@@ -261,23 +254,11 @@ def generate_answer(
     prompt = safe_context + base_prompt
 
     try:
-        if not check_network():
-            return "❌ 错误：网络断开，无法调用大模型服务", valid_turns
-
-        resp = Generation.call(
-            model=MODEL_NAME,
-            prompt=prompt,
-            result_format="message",
-        )
-
-        if resp.status_code == 200:
-            answer = resp.output.choices[0].message.content
-            updated_history = valid_turns + [(user_query, answer)]
-            if len(updated_history) > max_history:
-                updated_history = updated_history[-max_history:]
-            return answer, updated_history
-
-        return f"❌ 模型调用失败: {resp.message}", valid_turns
+        answer = generate_text(prompt, temperature=0)
+        updated_history = valid_turns + [(user_query, answer)]
+        if len(updated_history) > max_history:
+            updated_history = updated_history[-max_history:]
+        return answer, updated_history
 
     except Exception as e:
         return f"❌ 模型服务异常: {e}", valid_turns

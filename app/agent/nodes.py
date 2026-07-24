@@ -4,11 +4,10 @@ import re
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.tools import tool
-from langchain_openai import ChatOpenAI
 
-from app.core.config import API_KEY, DASHSCOPE_BASE_URL, MODEL_NAME
 from app.agent.state import AgentState
 from app.retrievers.confidence import LOW_CONFIDENCE_ANSWER
+from app.services.llm_provider import create_chat_model
 from app.tools.document_tools import count_tables_tool, list_headings_tool
 from app.tools.machine_health_tool import check_machine_health_tool
 from app.tools.retrieval_tools import retrieve_chunks_tool
@@ -92,14 +91,9 @@ HEALTH_MARKERS = (
 
 def create_model():
     """
-    使用 DashScope 的 OpenAI-compatible 接口接入 Qwen。
+    通过 LLM provider 创建 Agent 使用的 chat model。
     """
-    return ChatOpenAI(
-        model=MODEL_NAME,
-        api_key=API_KEY,
-        base_url=DASHSCOPE_BASE_URL,
-        temperature=0,
-    )
+    return create_chat_model(temperature=0)
 
 
 def build_memory_system_message(memory_summary: str) -> SystemMessage | None:
