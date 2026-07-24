@@ -22,6 +22,13 @@ from app.core.config import (
     CONTEXT_TRUNCATE_STEP,
 )
 from app.retrievers.retriever_v1_faiss import retrieve_relevant_chunks_faiss
+from app.retrievers.confidence import (
+    LOW_CONFIDENCE_ANSWER,
+    build_sources,
+    calculate_confidence,
+    is_low_confidence,
+)
+from app.retrievers.retriever_v2_hybrid import retrieve_relevant_chunks_hybrid
 from app.retrievers.retriever_v2_pgvector import retrieve_relevant_chunks_pgvector
 from utils.utils import check_network
 dashscope.api_key = API_KEY
@@ -36,6 +43,9 @@ def build_chat_state_from_request(request, user_id: UUID | str | None = None) ->
         knowledge_base_id=request.knowledge_base_id,
         user_id=str(user_id) if user_id is not None else None,
         collection_id=str(request.collection_id) if request.collection_id is not None else None,
+        retriever_version=getattr(request, "retriever_version", "v1"),
+        top_k=getattr(request, "top_k", 3),
+        use_rerank=getattr(request, "use_rerank", False),
         user_query=request.question,
         history_pairs=history_pairs,
     )
@@ -44,30 +54,98 @@ def chat_with_rag_state(state: ChatState):
     valid_turns = list(state.history_pairs or [])
     enhanced_query = enhance_query_with_history(state.user_query, valid_turns)
 
-    relevant_texts, error, _results = retrieve_relevant_chunks_pgvector(
-        knowledge_base_id=state.knowledge_base_id,
-        enhanced_query=enhanced_query,
-        user_id=state.user_id,
-        collection_id=state.collection_id,
-    )
+    retriever_version = (state.retriever_version or "v1").lower()
+    if retriever_version == "v2":
+        relevant_texts, error, results = retrieve_relevant_chunks_hybrid(
+            knowledge_base_id=state.knowledge_base_id,
+            enhanced_query=enhanced_query,
+            user_id=state.user_id,
+            collection_id=state.collection_id,
+            top_k=state.top_k,
+            use_rerank=state.use_rerank,
+        )
+    else:
+        relevant_texts, error, results = retrieve_relevant_chunks_pgvector(
+            knowledge_base_id=state.knowledge_base_id,
+            enhanced_query=enhanced_query,
+            user_id=state.user_id,
+            collection_id=state.collection_id,
+            limit=state.top_k,
+        )
+
     if error is None:
-        return generate_answer(
+        metadata = build_retrieval_metadata(results)
+        if is_low_confidence(metadata["confidence"]):
+            updated_history = append_answer_to_history(
+                valid_turns,
+                state.user_query,
+                LOW_CONFIDENCE_ANSWER,
+            )
+            return LOW_CONFIDENCE_ANSWER, updated_history, metadata
+
+        answer, updated_history = generate_answer(
             user_query=state.user_query,
             relevant_texts=relevant_texts,
             valid_turns=valid_turns,
         )
+        return answer, updated_history, metadata
 
     if error.startswith("📚"):
-        return error, valid_turns
+        return error, valid_turns, {"confidence": 0.0, "sources": []}
+
+    if retriever_version == "v2":
+        relevant_texts, error, results = retrieve_relevant_chunks_pgvector(
+            knowledge_base_id=state.knowledge_base_id,
+            enhanced_query=enhanced_query,
+            user_id=state.user_id,
+            collection_id=state.collection_id,
+            limit=state.top_k,
+        )
+        if error is None:
+            metadata = build_retrieval_metadata(results)
+            if is_low_confidence(metadata["confidence"]):
+                updated_history = append_answer_to_history(
+                    valid_turns,
+                    state.user_query,
+                    LOW_CONFIDENCE_ANSWER,
+                )
+                return LOW_CONFIDENCE_ANSWER, updated_history, metadata
+
+            answer, updated_history = generate_answer(
+                user_query=state.user_query,
+                relevant_texts=relevant_texts,
+                valid_turns=valid_turns,
+            )
+            return answer, updated_history, metadata
+        if error.startswith("📚"):
+            return error, valid_turns, {"confidence": 0.0, "sources": []}
 
     rag_system = get_knowledge_base(state.knowledge_base_id)
     if rag_system is not None:
-        return rag_system.query(
+        answer, updated_history = rag_system.query(
             user_query=state.user_query,
             history=state.history_pairs,
         )
+        return answer, updated_history, {"confidence": None, "sources": []}
 
-    return error, valid_turns
+    return error, valid_turns, {"confidence": 0.0, "sources": []}
+
+
+def build_retrieval_metadata(results: list[dict]) -> dict:
+    return {
+        "confidence": calculate_confidence(results),
+        "sources": build_sources(results),
+    }
+
+
+def append_answer_to_history(
+    valid_turns: List[Tuple[str, str]],
+    user_query: str,
+    answer: str,
+    max_history: int = 3,
+) -> List[Tuple[str, str]]:
+    updated_history = valid_turns + [(user_query, answer)]
+    return updated_history[-max_history:]
 
 def normalize_history(history: Optional[list], max_history: int = 3) -> List[Tuple[str, str]]:
     """规范化对话历史"""

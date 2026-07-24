@@ -19,6 +19,10 @@ EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL_NAME", "text-embedding-v1").st
 if not API_KEY and EMBEDDING_PROVIDER != "fake":
     raise RuntimeError("缺少环境变量 DASHSCOPE_API_KEY")
 
+# rerank provider: mock(默认，便于离线/测试) 或 none(不调整顺序，仅补齐 rerank_score)
+RERANK_PROVIDER = os.getenv("RERANK_PROVIDER", "mock").strip().lower()
+RAG_MIN_CONFIDENCE = float(os.getenv("RAG_MIN_CONFIDENCE", "0.0") or "0.0")
+
 # 文本处理配置
 CHUNK_SIZE = 300
 CHUNK_OVERLAP = 50

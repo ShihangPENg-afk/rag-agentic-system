@@ -39,12 +39,18 @@ def build_agent_graph(
     knowledge_base_id: str,
     user_id: str | None = None,
     collection_id: str | None = None,
+    retriever_version: str = "v1",
+    top_k: int = 3,
+    use_rerank: bool = False,
     chat_history_pairs: list[tuple[str, str]] | None = None,
 ):
     tools = make_agent_tools(
         knowledge_base_id=knowledge_base_id,
         user_id=user_id,
         collection_id=collection_id,
+        retriever_version=retriever_version,
+        top_k=top_k,
+        use_rerank=use_rerank,
         history_pairs=chat_history_pairs or [],
     )
     tool_node = ToolNode(tools)

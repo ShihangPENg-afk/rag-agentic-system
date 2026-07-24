@@ -60,6 +60,12 @@ class AgentState(TypedDict, total=False):
     user_id: str
     # 当前检索限定的集合 ID，供 pgvector collection 过滤
     collection_id: str
+    # 检索版本：v1 使用现有 baseline，v2 使用 hybrid retrieval
+    retriever_version: str
+    # 本轮检索返回的 chunk 数量
+    top_k: int
+    # 是否对 hybrid retrieval 候选结果做二次排序
+    use_rerank: bool
     # 结构化多轮历史：(用户问题, 助手回答) 列表，供 Memory 节点拼 prompt 或做摘要输入
     chat_history_pairs: list[tuple[str, str]]
     # 本轮待回答的用户问题（可与 messages 中最后一条 human 对齐，便于 Memory/RAG 节点单独读取）

@@ -1,16 +1,20 @@
 from __future__ import annotations
 
+import re
 from typing import Any, Dict, List, Tuple
 from uuid import UUID
 
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 from app.agent.graph import build_agent_graph
+from app.retrievers.confidence import LOW_CONFIDENCE_ANSWER
 from app.schemas.api_models import QuestionRequest
 
 MAX_HISTORY = 3
 TOOL_OUTPUT_PREVIEW_LENGTH = 300
 EVIDENCE_PREVIEW_LENGTH = 200
+SOURCE_LINE_RE = re.compile(r"chunk_id=(?P<chunk_id>\S+) document_id=(?P<document_id>\S+) (?P<scores>[^\n]*)")
+SCORE_RE = re.compile(r"(?P<name>rerank_score|final_score|dense_score|bm25_score|score)=(?P<value>[0-9.]+)")
 
 
 def _history_to_messages(request: QuestionRequest) -> list:
@@ -63,6 +67,9 @@ def build_agent_state_from_request(
         "knowledge_base_id": request.knowledge_base_id,
         "user_id": str(user_id) if user_id is not None else None,
         "collection_id": str(request.collection_id) if request.collection_id is not None else None,
+        "retriever_version": getattr(request, "retriever_version", "v1"),
+        "top_k": getattr(request, "top_k", 3),
+        "use_rerank": getattr(request, "use_rerank", False),
         "chat_history_pairs": history_pairs,
         "current_question": request.question,
         "retrieved_evidence": [],
@@ -153,6 +160,49 @@ def _extract_retrieved_evidence(messages: list) -> List[str]:
     return evidence[:5]
 
 
+def _score_from_names(scores: dict[str, float]) -> float:
+    for key in ("rerank_score", "final_score", "score", "dense_score", "bm25_score"):
+        if key in scores:
+            return scores[key]
+    return 0.0
+
+
+def _extract_sources_and_confidence(messages: list) -> tuple[float | None, list[dict[str, Any]]]:
+    sources: list[dict[str, Any]] = []
+    confidence_scores: list[float] = []
+    saw_low_confidence_answer = False
+
+    for msg in messages:
+        if not isinstance(msg, ToolMessage):
+            continue
+
+        text = str(msg.content)
+        if LOW_CONFIDENCE_ANSWER in text:
+            saw_low_confidence_answer = True
+
+        for match in SOURCE_LINE_RE.finditer(text):
+            named_scores = {
+                score_match.group("name"): float(score_match.group("value"))
+                for score_match in SCORE_RE.finditer(match.group("scores"))
+            }
+            score = _score_from_names(named_scores)
+            confidence_scores.append(score)
+            sources.append(
+                {
+                    "chunk_id": match.group("chunk_id"),
+                    "document_id": match.group("document_id"),
+                    "score": score,
+                    **named_scores,
+                }
+            )
+
+    if confidence_scores:
+        return max(confidence_scores), sources
+    if saw_low_confidence_answer:
+        return 0.0, []
+    return None, sources
+
+
 def chat_with_agent_state(
     request: QuestionRequest,
     user_id: UUID | str | None = None,
@@ -170,6 +220,9 @@ def chat_with_agent_state(
         knowledge_base_id=request.knowledge_base_id,
         user_id=user_id,
         collection_id=request.collection_id,
+        retriever_version=getattr(request, "retriever_version", "v1"),
+        top_k=getattr(request, "top_k", 3),
+        use_rerank=getattr(request, "use_rerank", False),
         chat_history_pairs=input_state["chat_history_pairs"],
     )
 
@@ -177,6 +230,7 @@ def chat_with_agent_state(
 
     final_messages = result["messages"]
     answer = _extract_final_answer(final_messages)
+    confidence, sources = _extract_sources_and_confidence(final_messages)
 
     updated_history: List[Tuple[str, str]] = input_state["chat_history_pairs"] + [
         (request.question, answer)
@@ -205,6 +259,8 @@ def chat_with_agent_state(
 
     return {
         "answer": answer,
+        "confidence": confidence,
+        "sources": sources,
         "history": updated_history,
         "debug": debug_payload,
     }

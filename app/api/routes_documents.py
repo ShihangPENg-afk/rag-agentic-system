@@ -15,6 +15,9 @@ from app.api.upload import (
 from app.api.routes_auth import get_current_user
 from app.models.user import User
 from app.repositories.qa_log_repository import list_qa_logs_by_knowledge_base
+from app.retrievers.retriever_v2_hybrid import (
+    retrieve_similar_chunks as retrieve_hybrid_chunks,
+)
 from app.retrievers.retriever_v2_pgvector import retrieve_similar_chunks
 from app.schemas.api_models import (
     QALogsListResponse,
@@ -57,13 +60,23 @@ async def retrieve_document_chunks(
         document_id=request.document_id,
         collection_id=request.collection_id,
     )
-    results, error = retrieve_similar_chunks(
-        query=request.query,
-        user_id=current_user.id,
-        document_id=request.document_id,
-        collection_id=request.collection_id,
-        limit=request.limit,
-    )
+    if request.retriever_version == "v2":
+        results, error = retrieve_hybrid_chunks(
+            query=request.query,
+            user_id=current_user.id,
+            document_id=request.document_id,
+            collection_id=request.collection_id,
+            top_k=request.limit,
+            use_rerank=request.use_rerank,
+        )
+    else:
+        results, error = retrieve_similar_chunks(
+            query=request.query,
+            user_id=current_user.id,
+            document_id=request.document_id,
+            collection_id=request.collection_id,
+            limit=request.limit,
+        )
     if error is not None:
         if error.startswith("📚"):
             return {"total": 0, "chunks": []}

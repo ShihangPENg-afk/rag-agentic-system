@@ -8,6 +8,7 @@ from langchain_openai import ChatOpenAI
 
 from app.core.config import API_KEY, DASHSCOPE_BASE_URL, MODEL_NAME
 from app.agent.state import AgentState
+from app.retrievers.confidence import LOW_CONFIDENCE_ANSWER
 from app.tools.document_tools import count_tables_tool, list_headings_tool
 from app.tools.machine_health_tool import check_machine_health_tool
 from app.tools.retrieval_tools import retrieve_chunks_tool
@@ -120,6 +121,9 @@ def make_agent_tools(
     knowledge_base_id: str,
     user_id: str | None = None,
     collection_id: str | None = None,
+    retriever_version: str = "v1",
+    top_k: int = 3,
+    use_rerank: bool = False,
     history_pairs: list[tuple[str, str]] | None = None,
 ):
     history_pairs = history_pairs or []
@@ -131,8 +135,11 @@ def make_agent_tools(
             knowledge_base_id=knowledge_base_id,
             user_id=user_id,
             collection_id=collection_id,
+            retriever_version=retriever_version,
             user_query=query,
             history=history_pairs,
+            limit=top_k,
+            use_rerank=use_rerank,
         )
 
     @tool("list_headings")
@@ -408,6 +415,13 @@ def answer_node(state: AgentState) -> dict:
     memory_summary = state.get("memory_summary", "")
     evidence_by_sub_query = state.get("evidence_by_sub_query", {})
 
+    evidence_groups = [evidences for evidences in evidence_by_sub_query.values() if evidences]
+    if evidence_groups and all(
+        any(LOW_CONFIDENCE_ANSWER in evidence for evidence in evidences)
+        for evidences in evidence_groups
+    ):
+        return {"messages": [AIMessage(content=LOW_CONFIDENCE_ANSWER)]}
+
     model = create_model()
 
     evidence_lines = []
@@ -468,6 +482,9 @@ def agent_node(state: AgentState) -> dict:
         knowledge_base_id=knowledge_base_id,
         user_id=state.get("user_id"),
         collection_id=state.get("collection_id"),
+        retriever_version=state.get("retriever_version", "v1"),
+        top_k=state.get("top_k", 3),
+        use_rerank=state.get("use_rerank", False),
         history_pairs=chat_history_pairs,
     )
     model = create_model().bind_tools(tools)

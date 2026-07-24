@@ -11,6 +11,12 @@ class ChatState(BaseModel):
     user_id: Optional[str] = None
     # 可选集合 ID，用于 pgvector collection 过滤
     collection_id: Optional[str] = None
+    # 检索版本：v1 使用现有 baseline，v2 使用 hybrid retrieval
+    retriever_version: str = "v1"
+    # 本轮检索返回的 chunk 数量
+    top_k: int = 3
+    # 是否对 hybrid retrieval 候选结果做二次排序
+    use_rerank: bool = False
     # 用户问题
     user_query: str
     # 对话历史

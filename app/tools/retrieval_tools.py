@@ -8,6 +8,14 @@ from app.services.chat_service import (
     normalize_history,
     retrieve_relevant_chunks,
 )
+from app.retrievers.retriever_v2_hybrid import (
+    retrieve_similar_chunks as retrieve_hybrid_chunks,
+)
+from app.retrievers.confidence import (
+    LOW_CONFIDENCE_ANSWER,
+    calculate_confidence,
+    is_low_confidence,
+)
 from app.retrievers.retriever_v2_pgvector import (
     list_persisted_chunks_for_document,
     retrieve_similar_chunks,
@@ -55,10 +63,33 @@ def format_retrieved_chunk_results(
         if preview_length is not None and preview_length > 0:
             text = text[:preview_length] + ("..." if len(text) > preview_length else "")
 
+        score = float(item.get("final_score", item.get("score", 0.0)) or 0.0)
+        score_parts = [f"score={score:.4f}"]
+        if item.get("dense_score") is not None:
+            score_parts.append(f"dense_score={float(item['dense_score']):.4f}")
+        if item.get("bm25_score") is not None:
+            score_parts.append(f"bm25_score={float(item['bm25_score']):.4f}")
+        if item.get("rerank_score") is not None:
+            score_parts.append(f"rerank_score={float(item['rerank_score']):.4f}")
+
+        source_metadata = item.get("source_metadata") or {}
+        source_parts = []
+        if source_metadata.get("document_filename"):
+            source_parts.append(f"document_filename={source_metadata['document_filename']}")
+        if source_metadata.get("collection_name"):
+            source_parts.append(f"collection_name={source_metadata['collection_name']}")
+        if source_metadata.get("chunk_index") is not None:
+            source_parts.append(f"chunk_index={source_metadata['chunk_index']}")
+        retrieval_sources = source_metadata.get("retrieval_sources") or {}
+        if retrieval_sources:
+            source_parts.append(f"retrieval_sources={','.join(retrieval_sources.keys())}")
+
         lines.append(
             f"{i}. chunk_id={item['chunk_id']} "
             f"document_id={item['document_id']} "
-            f"score={item['score']:.4f}\n{text}"
+            f"{' '.join(score_parts)}"
+            + (f"\nsource_metadata: {'; '.join(source_parts)}" if source_parts else "")
+            + f"\n{text}"
         )
 
     return "\n".join(lines)
@@ -69,15 +100,38 @@ def retrieve_chunks_tool(
     user_query: str,
     user_id: str | None = None,
     collection_id: str | None = None,
+    retriever_version: str = "v1",
     history: Optional[List[Tuple[str, str]]] = None,
     max_history: int = 3,
     limit: int = 3,
+    use_rerank: bool = False,
 ) -> str:
     """
     根据用户问题检索知识库中的相关文本片段（不调用大模型生成答案）。
     """
     valid_turns = normalize_history(history, max_history=max_history)
     enhanced_query = enhance_query_with_history(user_query, valid_turns)
+
+    normalized_version = (retriever_version or "v1").lower()
+    if normalized_version == "v2":
+        results, error = retrieve_hybrid_chunks(
+            query=enhanced_query,
+            user_id=user_id,
+            document_id=knowledge_base_id,
+            collection_id=collection_id,
+            top_k=limit,
+            use_rerank=use_rerank,
+        )
+        if error is None:
+            if is_low_confidence(calculate_confidence(results)):
+                return LOW_CONFIDENCE_ANSWER
+            return format_retrieved_chunk_results(
+                results,
+                title="检索到的相关片段",
+            )
+        if not error.startswith("⚠️ hybrid 检索服务异常"):
+            return error
+
     results, error = retrieve_similar_chunks(
         query=enhanced_query,
         user_id=user_id,
@@ -86,6 +140,8 @@ def retrieve_chunks_tool(
         limit=limit,
     )
     if error is None:
+        if is_low_confidence(calculate_confidence(results)):
+            return LOW_CONFIDENCE_ANSWER
         return format_retrieved_chunk_results(results, title="检索到的相关片段")
     if not error.startswith("⚠️ pgvector 检索服务异常"):
         return error

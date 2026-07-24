@@ -31,6 +31,8 @@ async def ask_question(request: QuestionRequest):
 
         return {
             "answer": result["answer"],
+            "confidence": result.get("confidence"),
+            "sources": result.get("sources", []),
             "knowledge_base_id": request.knowledge_base_id,
             "history": result["history"],
             "debug": result["debug"],
@@ -52,10 +54,17 @@ async def ask_question_rag(request: QuestionRequest):
             raise HTTPException(status_code=500, detail="网络连接异常，无法调用AI服务")
 
         state = build_chat_state_from_request(request)
-        answer, updated_history = chat_with_rag_state(state)
+        rag_result = chat_with_rag_state(state)
+        if len(rag_result) == 3:
+            answer, updated_history, retrieval_metadata = rag_result
+        else:
+            answer, updated_history = rag_result
+            retrieval_metadata = {"confidence": None, "sources": []}
 
         return {
             "answer": answer,
+            "confidence": retrieval_metadata.get("confidence"),
+            "sources": retrieval_metadata.get("sources", []),
             "knowledge_base_id": state.knowledge_base_id,
             "history": updated_history,
             "debug": None,

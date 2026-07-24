@@ -83,6 +83,8 @@ async def ask_question(
 
         return {
             "answer": result["answer"],
+            "confidence": result.get("confidence"),
+            "sources": result.get("sources", []),
             "knowledge_base_id": request.knowledge_base_id,
             "session_id": session["id"],
             "history": result["history"],
@@ -116,7 +118,12 @@ async def ask_question_rag(
             raise HTTPException(status_code=500, detail="网络连接异常，无法调用AI服务")
 
         state = build_chat_state_from_request(request, user_id=current_user.id)
-        answer, updated_history = chat_with_rag_state(state)
+        rag_result = chat_with_rag_state(state)
+        if len(rag_result) == 3:
+            answer, updated_history, retrieval_metadata = rag_result
+        else:
+            answer, updated_history = rag_result
+            retrieval_metadata = {"confidence": None, "sources": []}
         session = persist_chat_exchange(
             user_id=current_user.id,
             question=request.question,
@@ -126,6 +133,8 @@ async def ask_question_rag(
 
         return {
             "answer": answer,
+            "confidence": retrieval_metadata.get("confidence"),
+            "sources": retrieval_metadata.get("sources", []),
             "knowledge_base_id": state.knowledge_base_id,
             "session_id": session["id"],
             "history": updated_history,
