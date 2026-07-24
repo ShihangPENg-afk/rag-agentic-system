@@ -300,6 +300,8 @@ UI 主要能力：PDF 上传与向量库构建、多轮 Agent 问答、Debug Tra
 | **rag-agentic-system** | `8000` | PDF 上传、Agent 问答、PostgreSQL 元数据 |
 | **predictive-maintenance-mini** | `8010` | 传感器特征 → 设备健康分类（`/health`、`/model-info`、`/predict`） |
 
+`maintenance_agent` 的 `check_machine_health` 默认优先调用 `POST {HEALTH_API_URL}/predict`（默认 `http://127.0.0.1:8010/predict`，`HEALTH_API_TIMEOUT=5` 秒）。如果预测服务超时、未启动、返回 HTTP 错误或响应格式异常，工具会自动返回本地 mock fallback，避免整个 Agent 请求崩溃。返回字段包含 `prediction`、`risk_level`、`trigger_reasons`、`recommended_actions`，仅用于演示级设备健康判断，不作为生产维护决策依据。
+
 **一键启动双服务栈**（需同级目录存在 `../predictive-maintenance-mini`）：
 
 ```bash
@@ -319,6 +321,8 @@ make docker-verify     # curl /health /model-info + 样例 /predict
 
 # 终端 B — rag-agentic-system
 cd ../rag-agentic-system
+export HEALTH_API_URL=http://127.0.0.1:8010
+export HEALTH_API_TIMEOUT=5
 make env-check && make docker-up
 make stack-verify
 ```
@@ -340,6 +344,7 @@ make ui
 - **侧边栏** `API_BASE_URL` → rag-agentic-system（PDF / 聊天 / Debug Trace）
 - **「设备健康预测」Tab** `HEALTH_API_URL` → predictive-maintenance-mini（默认 `http://127.0.0.1:8010`）
 - 点击「获取模型信息」加载特征字段 → 输入传感器参数 →「预测设备健康状态」
+- **Agent 工具** `check_machine_health` → 优先 HTTP 调用 predictive-maintenance-mini；服务不可用时使用 mock fallback
 
 > **端口冲突注意**：不要在宿主机用 `uvicorn ... --port 8000` 启动 predictive-maintenance-mini；该服务应仅监听 **8010**（Docker 已配置）。若 `make smoke` 报「指向了错误的服务」，说明 8000 被其他进程占用，停止后仅保留 rag-agentic-system 容器即可。
 
@@ -705,7 +710,7 @@ EVAL_USER_ID=<user_id> python3 evals/evaluate_retrieval.py --top-k 5
 
 **联动方式：**
 
-- **Agent 工具**：`check_machine_health` → `app/tools/machine_health_tool.py` → `POST {HEALTH_API_URL}/predict`
+- **Agent 工具**：`check_machine_health` → `app/agents/maintenance_agent/tools.py` → 优先 `POST {HEALTH_API_URL}/predict`，失败时 mock fallback
 - **Streamlit 直连**：「设备健康预测」Tab 不经过 Agent，直接调 `:8010`
 - **解耦边界**：两仓库无共享进程、无共享数据库；工业服务可独立升级或替换
 

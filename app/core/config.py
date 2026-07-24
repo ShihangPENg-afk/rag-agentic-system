@@ -47,7 +47,7 @@ NETWORK_CHECK_URL = "https://dashscope.aliyun.com"
 
 # 工业设备健康预测 API
 HEALTH_API_URL = os.getenv("HEALTH_API_URL", "http://127.0.0.1:8010").strip()
-HEALTH_API_TIMEOUT = int(os.getenv("HEALTH_API_TIMEOUT", "30"))
+HEALTH_API_TIMEOUT = float(os.getenv("HEALTH_API_TIMEOUT", "5"))
 
 # JWT 认证配置
 JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "dev-only-change-me").strip()

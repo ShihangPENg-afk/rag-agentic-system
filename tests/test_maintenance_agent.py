@@ -1,9 +1,18 @@
 import logging
 
+import pytest
+import requests
+
+from app.agents.maintenance_agent import tools as maintenance_tools
 from app.services.agent_service import (
     confirm_maintenance_agent_action,
     invoke_maintenance_agent,
 )
+
+
+@pytest.fixture(autouse=True)
+def default_mock_health_provider(monkeypatch):
+    monkeypatch.setenv("MAINTENANCE_HEALTH_PROVIDER", "mock")
 
 
 def _mock_retrieve_manual_result(document_id: str) -> dict:
@@ -52,6 +61,103 @@ def _mock_health_result(risk_level: str = "low", risk_score: float = 0.2) -> dic
         "recommendation": "测试预测建议",
         "probabilities": {risk_level: risk_score},
     }
+
+
+def test_check_machine_health_prefers_predictive_http(monkeypatch):
+    monkeypatch.delenv("MAINTENANCE_HEALTH_PROVIDER", raising=False)
+    monkeypatch.setattr(
+        maintenance_tools,
+        "HEALTH_API_URL",
+        "http://predictive-maintenance-mini:8010",
+    )
+    captured = {}
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "prediction": "defect",
+                "risk_level": "high",
+                "risk_score": 0.82,
+                "trigger_reasons": ["vibration is elevated"],
+                "recommended_actions": ["Inspect the machine."],
+                "recommendation": "Immediate inspection recommended.",
+                "probabilities": {"defect": 0.82, "normal": 0.18},
+                "model_version": "RandomForestClassifier-baseline-rs42",
+            }
+
+    def fake_post(url, json, timeout):
+        captured["url"] = url
+        captured["json"] = json
+        captured["timeout"] = timeout
+        return FakeResponse()
+
+    monkeypatch.setattr(maintenance_tools.requests, "post", fake_post)
+
+    result = maintenance_tools.check_machine_health(
+        machine_id="MACHINE-HTTP",
+        sensor_data={
+            "temperature": 73.5,
+            "pressure": 5.2,
+            "vibration": 2.1,
+            "speed": 118.0,
+            "humidity": 48.0,
+        },
+    )
+
+    assert captured["url"] == "http://predictive-maintenance-mini:8010/predict"
+    assert captured["json"]["features"]["temperature"] == 73.5
+    assert captured["timeout"][0] <= 2.0
+    assert captured["timeout"][1] <= 10.0
+    assert result["provider"] == "predictive-maintenance-mini"
+    assert result["prediction"] == "defect"
+    assert result["risk_level"] == "high"
+    assert result["trigger_reasons"] == ["vibration is elevated"]
+    assert result["recommended_actions"] == ["Inspect the machine."]
+    assert result["model_version"] == "RandomForestClassifier-baseline-rs42"
+
+
+def test_check_machine_health_falls_back_when_predictive_service_unavailable(
+    monkeypatch,
+):
+    monkeypatch.delenv("MAINTENANCE_HEALTH_PROVIDER", raising=False)
+
+    def fake_post(*args, **kwargs):
+        raise requests.Timeout("request timed out")
+
+    monkeypatch.setattr(maintenance_tools.requests, "post", fake_post)
+
+    result = maintenance_tools.check_machine_health(
+        machine_id="MACHINE-FALLBACK",
+        sensor_data={"temperature": 82, "vibration": 0.3},
+    )
+
+    assert result["provider"] == "mock-fallback"
+    assert result["prediction"] == "abnormal"
+    assert result["risk_level"] == "high"
+    assert result["trigger_reasons"]
+    assert result["recommended_actions"]
+    assert "timed out" in result["fallback_reason"]
+
+
+def test_check_machine_health_handles_invalid_sensor_payload_without_crashing(
+    monkeypatch,
+):
+    monkeypatch.delenv("MAINTENANCE_HEALTH_PROVIDER", raising=False)
+
+    result = maintenance_tools.check_machine_health(
+        machine_id="MACHINE-BAD-PAYLOAD",
+        sensor_data=["temperature", 82],  # type: ignore[arg-type]
+    )
+
+    assert result["provider"] == "mock-fallback"
+    assert result["prediction"] == "unknown"
+    assert result["risk_level"] == "unknown"
+    assert result["trigger_reasons"]
+    assert result["recommended_actions"]
+    assert "sensor_data must be a dict" in result["fallback_reason"]
 
 
 def test_maintenance_agent_service_runs_with_mock_health():

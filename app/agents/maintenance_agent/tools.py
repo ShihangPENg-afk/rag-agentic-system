@@ -1,19 +1,17 @@
 from __future__ import annotations
 
-import json
 import os
-import re
 import uuid
 from datetime import datetime, timezone
 from typing import Any
 
+import requests
+
+from app.core.config import HEALTH_API_TIMEOUT, HEALTH_API_URL
 from app.retrievers import retriever_v1_faiss, retriever_v2_hybrid, retriever_v2_pgvector
 from app.retrievers.confidence import build_sources, calculate_confidence
 from app.services.chat_service import list_user_chat_sessions, list_user_session_messages
 from app.services.kb_registry import get_knowledge_base
-from app.tools.machine_health_tool import (
-    check_machine_health_tool as legacy_check_machine_health,
-)
 
 
 def _empty_retrieval_result(error: str | None = None) -> dict[str, Any]:
@@ -157,25 +155,11 @@ def retrieve_manual(
     return _empty_retrieval_result("; ".join(errors) or "未检索到相关手册内容")
 
 
-def _parse_health_payload(raw_output: str) -> dict[str, Any] | None:
-    match = re.search(r"raw_response:\s*(\{.*\})\s*$", raw_output, flags=re.S)
-    if not match:
-        return None
-
-    try:
-        payload = json.loads(match.group(1))
-    except json.JSONDecodeError:
-        return None
-
-    if not isinstance(payload, dict):
-        return None
-    return payload
-
-
 def _mock_health_result(
     *,
     machine_id: str,
     sensor_data: dict[str, Any],
+    fallback_reason: str | None = None,
 ) -> dict[str, Any]:
     numeric_values = {
         str(key).lower(): float(value)
@@ -207,8 +191,12 @@ def _mock_health_result(
             "prediction": "unknown",
             "risk_level": "unknown",
             "risk_score": None,
+            "trigger_reasons": ["未提供有效传感器数据，无法生成规则触发原因。"],
+            "recommended_actions": ["补充温度、压力、振动、转速、湿度等传感器读数后重试。"],
             "recommendation": "未提供有效传感器数据，暂不能完成实时风险判断。",
             "probabilities": {"unknown": 1.0},
+            "model_version": "mock-fallback",
+            "fallback_reason": fallback_reason,
         }
 
     if (temperature is not None and temperature >= 80) or (
@@ -237,12 +225,126 @@ def _mock_health_result(
         "prediction": prediction,
         "risk_level": risk_level,
         "risk_score": risk_score,
+        "trigger_reasons": _mock_trigger_reasons(numeric_values),
+        "recommended_actions": _recommended_actions_for_risk(risk_level),
         "recommendation": recommendation,
         "probabilities": {
             "low": max(0.0, 1.0 - risk_score),
             risk_level: risk_score,
         },
+        "model_version": "mock-fallback",
+        "fallback_reason": fallback_reason,
     }
+
+
+def _mock_trigger_reasons(numeric_values: dict[str, float]) -> list[str]:
+    reasons: list[str] = []
+    temperature = numeric_values.get("temperature") or numeric_values.get("temp")
+    vibration = numeric_values.get("vibration") or numeric_values.get("vibration_level")
+    pressure = numeric_values.get("pressure")
+    speed = numeric_values.get("speed")
+    humidity = numeric_values.get("humidity")
+
+    if temperature is not None and temperature >= 80:
+        reasons.append(f"temperature is high: {temperature:.2f} >= 80.00")
+    elif temperature is not None and temperature >= 65:
+        reasons.append(f"temperature is elevated: {temperature:.2f} >= 65.00")
+
+    if vibration is not None and vibration >= 0.8:
+        reasons.append(f"vibration is high: {vibration:.2f} >= 0.80")
+    elif vibration is not None and vibration >= 0.5:
+        reasons.append(f"vibration is elevated: {vibration:.2f} >= 0.50")
+
+    if pressure is not None and (pressure >= 5.8 or pressure <= 4.2):
+        reasons.append(f"pressure is outside demo band: {pressure:.2f}")
+    if speed is not None and (speed >= 135 or speed <= 85):
+        reasons.append(f"speed is outside demo band: {speed:.2f}")
+    if humidity is not None and (humidity >= 60 or humidity <= 35):
+        reasons.append(f"humidity is outside demo band: {humidity:.2f}")
+
+    if reasons:
+        return reasons
+    return ["No mock rule-based sensor trigger was detected."]
+
+
+def _recommended_actions_for_risk(risk_level: str) -> list[str]:
+    templates = {
+        "high": [
+            "通知值班工程师复核当前传感器读数。",
+            "检查温升、振动、压力及安全联锁状态。",
+            "若异常持续，考虑降载或暂停设备运行。",
+        ],
+        "medium": [
+            "提高接下来一个生产窗口的监测频率。",
+            "安排近期预防性点检。",
+            "复核最近的报警、维护和工况变化记录。",
+        ],
+        "low": [
+            "继续例行监测。",
+            "按既有维护计划执行巡检和记录。",
+        ],
+        "unknown": [
+            "补充完整传感器读数后重新评估。",
+            "在信息不足时先按维护手册执行人工检查。",
+        ],
+    }
+    return templates.get(risk_level, templates["unknown"])
+
+
+def _health_api_timeout() -> tuple[float, float]:
+    configured = os.getenv("HEALTH_API_TIMEOUT")
+    try:
+        read_timeout = float(configured) if configured else float(HEALTH_API_TIMEOUT)
+    except (TypeError, ValueError):
+        read_timeout = 5.0
+    read_timeout = max(0.5, min(read_timeout, 10.0))
+    connect_timeout = min(2.0, read_timeout)
+    return (connect_timeout, read_timeout)
+
+
+def _normalize_remote_health_result(
+    *,
+    machine_id: str,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    risk_level = str(payload.get("risk_level") or "unknown").lower()
+    trigger_reasons = payload.get("trigger_reasons")
+    recommended_actions = payload.get("recommended_actions")
+    recommendation = payload.get("recommendation")
+
+    if not isinstance(trigger_reasons, list) or not trigger_reasons:
+        trigger_reasons = ["Predictive service did not return rule-based trigger reasons."]
+    if not isinstance(recommended_actions, list) or not recommended_actions:
+        recommended_actions = (
+            [str(recommendation)] if recommendation else _recommended_actions_for_risk(risk_level)
+        )
+
+    return {
+        "machine_id": machine_id,
+        "provider": "predictive-maintenance-mini",
+        "prediction": payload.get("prediction", "unknown"),
+        "risk_level": risk_level,
+        "risk_score": payload.get("risk_score"),
+        "trigger_reasons": [str(reason) for reason in trigger_reasons],
+        "recommended_actions": [str(action) for action in recommended_actions],
+        "recommendation": recommendation,
+        "probabilities": payload.get("probabilities") or {},
+        "model_version": payload.get("model_version") or "unknown",
+    }
+
+
+def _predict_with_remote_service(sensor_data: dict[str, Any]) -> dict[str, Any]:
+    url = f"{HEALTH_API_URL.rstrip('/')}/predict"
+    response = requests.post(
+        url,
+        json={"features": sensor_data},
+        timeout=_health_api_timeout(),
+    )
+    response.raise_for_status()
+    payload = response.json()
+    if not isinstance(payload, dict):
+        raise ValueError("predictive service returned a non-object JSON response")
+    return payload
 
 
 def check_machine_health(
@@ -251,30 +353,39 @@ def check_machine_health(
     sensor_data: dict[str, Any] | None = None,
     provider: str | None = None,
 ) -> dict[str, Any]:
-    """Use the existing predictive-maintenance service or a deterministic mock."""
-    normalized_sensor_data = sensor_data or {}
+    """Call predictive-maintenance-mini first, with deterministic mock fallback."""
+    input_error = None
+    if sensor_data is None:
+        normalized_sensor_data = {}
+    elif isinstance(sensor_data, dict):
+        normalized_sensor_data = sensor_data
+    else:
+        normalized_sensor_data = {}
+        input_error = f"sensor_data must be a dict, got {type(sensor_data).__name__}"
     configured_provider = (
-        provider or os.getenv("MAINTENANCE_HEALTH_PROVIDER", "mock")
+        provider or os.getenv("MAINTENANCE_HEALTH_PROVIDER", "http")
     ).strip().lower()
 
     if configured_provider not in {"mock", "fake"} and normalized_sensor_data:
-        raw_output = legacy_check_machine_health(normalized_sensor_data)
-        payload = _parse_health_payload(raw_output)
-        if payload is not None:
-            risk_level = str(payload.get("risk_level") or "unknown").lower()
-            return {
-                "machine_id": machine_id,
-                "provider": configured_provider,
-                "prediction": payload.get("prediction", "unknown"),
-                "risk_level": risk_level,
-                "risk_score": payload.get("risk_score"),
-                "recommendation": payload.get("recommendation"),
-                "probabilities": payload.get("probabilities") or {},
-            }
+        try:
+            payload = _predict_with_remote_service(normalized_sensor_data)
+            return _normalize_remote_health_result(
+                machine_id=machine_id,
+                payload=payload,
+            )
+        except (requests.RequestException, ValueError) as exc:
+            result = _mock_health_result(
+                machine_id=machine_id,
+                sensor_data=normalized_sensor_data,
+                fallback_reason=str(exc),
+            )
+            result["provider"] = "mock-fallback"
+            return result
 
     result = _mock_health_result(
         machine_id=machine_id,
         sensor_data=normalized_sensor_data,
+        fallback_reason=input_error,
     )
     if configured_provider not in {"mock", "fake"}:
         result["provider"] = "mock-fallback"
