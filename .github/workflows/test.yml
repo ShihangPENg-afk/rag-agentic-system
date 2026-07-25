@@ -36,6 +36,8 @@ jobs:
     env:
       PYTHONPATH: .
       EMBEDDING_PROVIDER: fake
+      LLM_PROVIDER: local
+      LOCAL_LLM_MOCK: "true"
       JWT_SECRET_KEY: ci-test-jwt-secret
       DATABASE_URL: postgresql+psycopg2://rag_agent_user:rag_agent_password@localhost:5432/rag_agent_test
       TEST_DATABASE_URL: postgresql+psycopg2://rag_agent_user:rag_agent_password@localhost:5432/rag_agent_test
