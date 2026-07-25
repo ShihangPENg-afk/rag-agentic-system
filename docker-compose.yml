@@ -1,9 +1,8 @@
 services:
   redis:
-    container_name: rag-agentic-system-redis
-    image: redis:7-alpine
+    image: ${REDIS_IMAGE:-public.ecr.aws/docker/library/redis:7-alpine}
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT:-6379}:6379"
     volumes:
       - redis_data:/data
     restart: unless-stopped
@@ -15,34 +14,47 @@ services:
       start_period: 5s
 
   postgres:
-    container_name: rag-agentic-system-postgres
-    image: pgvector/pgvector:pg16
+    build:
+      context: .
+      dockerfile: docker/postgres-pgvector/Dockerfile
+      args:
+        POSTGRES_BASE_IMAGE: ${POSTGRES_BASE_IMAGE:-public.ecr.aws/docker/library/postgres:16-alpine}
+        PGVECTOR_VERSION: ${PGVECTOR_VERSION:-0.8.1}
+    image: ${POSTGRES_IMAGE:-rag-agentic-system-postgres-pgvector:16}
     environment:
       POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
-      POSTGRES_DB: rag_agent_db
+      POSTGRES_DB: ${POSTGRES_DB:-rag_agent_db}
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:?POSTGRES_USER is required} -d rag_agent_db"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:?POSTGRES_USER is required} -d ${POSTGRES_DB:-rag_agent_db}"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 10s
 
   rag-agentic-system:
-    container_name: rag-agentic-system
-    build: .
+    build:
+      context: .
+      args:
+        PYTHON_BASE_IMAGE: ${PYTHON_BASE_IMAGE:-public.ecr.aws/docker/library/python:3.10-slim}
+        SKIP_SYSTEM_DEPS: ${SKIP_SYSTEM_DEPS:-false}
+        SKIP_PIP_INSTALL: ${SKIP_PIP_INSTALL:-false}
     ports:
-      - "8000:8000"
+      - "${API_PORT:-8000}:8000"
     env_file:
       - .env
     environment:
-      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:?POSTGRES_USER is required}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/rag_agent_db
-      POSTGRES_DB: rag_agent_db
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:?POSTGRES_USER is required}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-rag_agent_db}
+      POSTGRES_DB: ${POSTGRES_DB:-rag_agent_db}
+      LLM_PROVIDER: ${LLM_PROVIDER:-dashscope}
+      LOCAL_LLM_MOCK: ${LOCAL_LLM_MOCK:-false}
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-dashscope}
+      RERANK_PROVIDER: ${RERANK_PROVIDER:-mock}
       REDIS_URL: redis://redis:6379/0
       HEALTH_API_URL: http://host.docker.internal:8010
     volumes:

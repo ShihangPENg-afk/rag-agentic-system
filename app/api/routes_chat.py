@@ -1,7 +1,10 @@
+import json
 import logging
+import os
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
 
 from app.api.routes_auth import get_current_user
 from app.core.redis import increment_chat_rate_limit
@@ -27,6 +30,15 @@ router = APIRouter()
 CHAT_RATE_LIMIT_PER_MINUTE = 20
 
 
+def should_check_external_network() -> bool:
+    return os.getenv("LLM_PROVIDER", "dashscope").strip().lower() == "dashscope"
+
+
+def _sse(event: str, data: dict) -> str:
+    payload = json.dumps(data, ensure_ascii=False, default=str)
+    return f"event: {event}\ndata: {payload}\n\n"
+
+
 def enforce_chat_rate_limit(
     current_user: User = Depends(get_current_user),
 ) -> User:
@@ -50,11 +62,10 @@ def enforce_chat_rate_limit(
     return current_user
 
 
-@router.post("/ask/", response_model=AnswerResponse, summary="提问接口（Agent 默认入口）")
-async def ask_question(
+def _run_agent_question(
     request: QuestionRequest,
-    current_user: User = Depends(enforce_chat_rate_limit),
-):
+    current_user: User,
+) -> dict:
     try:
         validate_user_retrieval_filters(
             user_id=current_user.id,
@@ -62,7 +73,7 @@ async def ask_question(
             collection_id=request.collection_id,
         )
 
-        if not check_network():
+        if should_check_external_network() and not check_network():
             raise HTTPException(status_code=500, detail="网络连接异常，无法调用AI服务")
 
         result = chat_with_agent_state(request, user_id=current_user.id)
@@ -102,6 +113,50 @@ async def ask_question(
         raise HTTPException(status_code=500, detail="服务器内部错误，请稍后重试")
 
 
+@router.post("/chat", response_model=AnswerResponse, summary="提问接口（Agent 默认入口）")
+@router.post("/ask", response_model=AnswerResponse, summary="提问接口（Agent 默认入口）")
+@router.post("/ask/", response_model=AnswerResponse, summary="提问接口（Agent 默认入口）")
+async def ask_question(
+    request: QuestionRequest,
+    current_user: User = Depends(enforce_chat_rate_limit),
+):
+    return _run_agent_question(request, current_user)
+
+
+@router.post("/ask/stream", summary="流式提问接口（Agent 默认入口）")
+async def ask_question_stream(
+    request: QuestionRequest,
+    current_user: User = Depends(enforce_chat_rate_limit),
+):
+    def events():
+        try:
+            result = _run_agent_question(request, current_user)
+            yield _sse(
+                "final_answer",
+                {
+                    "answer": result["answer"],
+                    "confidence": result.get("confidence"),
+                    "sources": result.get("sources", []),
+                    "knowledge_base_id": result.get("knowledge_base_id"),
+                    "session_id": result.get("session_id"),
+                    "history": result.get("history", []),
+                    "debug": result.get("debug"),
+                    "mode": result.get("mode", "agent"),
+                },
+            )
+        except HTTPException as exc:
+            yield _sse(
+                "error",
+                {"status_code": exc.status_code, "detail": exc.detail},
+            )
+
+    return StreamingResponse(
+        events(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
 @router.post("/ask_rag/", response_model=AnswerResponse, summary="经典 RAG 提问接口（回退模式）")
 async def ask_question_rag(
     request: QuestionRequest,
@@ -114,7 +169,7 @@ async def ask_question_rag(
             collection_id=request.collection_id,
         )
 
-        if not check_network():
+        if should_check_external_network() and not check_network():
             raise HTTPException(status_code=500, detail="网络连接异常，无法调用AI服务")
 
         state = build_chat_state_from_request(request, user_id=current_user.id)

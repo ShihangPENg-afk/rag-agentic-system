@@ -7,7 +7,7 @@ Create Date: 2026-07-17
 """
 from typing import Sequence, Union
 
-from alembic import op
+from alembic import context, op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
@@ -19,24 +19,32 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def _has_table(table_name: str) -> bool:
+    if context.is_offline_mode():
+        return False
     bind = op.get_bind()
     inspector = sa.inspect(bind)
     return inspector.has_table(table_name)
 
 
 def _column_names(table_name: str) -> set[str]:
+    if context.is_offline_mode():
+        return set()
     bind = op.get_bind()
     inspector = sa.inspect(bind)
     return {column["name"] for column in inspector.get_columns(table_name)}
 
 
 def _index_names(table_name: str) -> set[str]:
+    if context.is_offline_mode():
+        return set()
     bind = op.get_bind()
     inspector = sa.inspect(bind)
     return {index["name"] for index in inspector.get_indexes(table_name)}
 
 
 def _foreign_key_names(table_name: str) -> set[str]:
+    if context.is_offline_mode():
+        return set()
     bind = op.get_bind()
     inspector = sa.inspect(bind)
     return {fk["name"] for fk in inspector.get_foreign_keys(table_name) if fk["name"]}

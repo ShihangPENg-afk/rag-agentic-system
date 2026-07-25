@@ -70,6 +70,7 @@ def _assert_pdf_magic_and_nonempty(path: str) -> None:
         )
 
 
+@router.post("/documents/upload", response_model=SingleUploadResponse, summary="上传单个PDF并构建知识库")
 @router.post("/upload_pdf/", response_model=SingleUploadResponse, summary="上传单个PDF并构建知识库")
 async def upload_single_pdf(
     file: UploadFile = File(...),

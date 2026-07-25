@@ -71,7 +71,7 @@ predictive-maintenance-mini (:8010)
 Docker Compose 会启动：
 
 - `rag-agentic-system`，FastAPI 后端，默认 `http://127.0.0.1:8000`
-- `postgres`，`pgvector/pgvector:pg16`，保存文档、chunks、embeddings 和 QA 日志
+- `postgres`，本仓库基于 PostgreSQL Alpine 构建并安装 pgvector，保存文档、chunks、embeddings 和 QA 日志
 - `redis`，用于 `/ask/` 与 `/ask_rag/` 的用户级限流
 
 ## 核心能力
@@ -166,21 +166,21 @@ export TOKEN="<access_token>"
 | --- | --- | --- | --- | --- |
 | `POST` | `/auth/register` | 注册新用户，创建本地账号。 | No | `id`, `email`, `is_active`, `created_at` |
 | `POST` | `/auth/login` | 用户登录，返回后续业务接口使用的 Bearer token。 | No | `access_token`, `token_type` |
-| `POST` | `/documents/upload` | 文档上传接口名；当前代码实现路径为 `POST /upload_pdf/`，用于上传单个 PDF 并构建知识库。 | Yes | `knowledge_base_id`, `collection_id`, `status`, `message`, `chunks_count`, `filename` |
+| `POST` | `/documents/upload` | 上传单个 PDF 并构建知识库；兼容旧路径 `POST /upload_pdf/`。 | Yes | `knowledge_base_id`, `collection_id`, `status`, `message`, `chunks_count`, `filename` |
 | `DELETE` | `/documents/{document_id}` | 删除当前用户的文档，并级联删除 chunks 与 embeddings。 | Yes | `document_id`, `deleted`, `chunks_deleted`, `embeddings_deleted` |
-| `POST` | `/ask` 或 `/chat` | Agentic RAG 问答入口；当前代码实现路径为 `POST /ask/`，支持 `retriever_version`, `top_k`, `use_rerank`, `history`, `debug`。 | Yes | `answer`, `confidence`, `sources`, `knowledge_base_id`, `session_id`, `history`, `debug`, `mode` |
-| `POST` | `/ask/stream` | 通用问答流式接口规划项；当前代码尚未暴露该路由，已有流式能力在 `POST /agent/stream`。 | Yes | SSE events: `delta` / `tool_trace` / `final_answer` / `error` |
+| `POST` | `/ask` 或 `/chat` | Agentic RAG 问答入口；兼容旧路径 `POST /ask/`，支持 `retriever_version`, `top_k`, `use_rerank`, `history`, `debug`。 | Yes | `answer`, `confidence`, `sources`, `knowledge_base_id`, `session_id`, `history`, `debug`, `mode` |
+| `POST` | `/ask/stream` | 通用问答 SSE 流式接口，返回最终回答事件；工业运维节点级流式过程见 `POST /agent/stream`。 | Yes | SSE events: `final_answer`, `error` |
 | `POST` | `/agent/invoke` | 工业运维 Agent 普通调用：手册检索、健康预测、维护计划生成和高风险确认判断。 | Yes | `final_answer`, `risk_level`, `tools_used`, `sources`, `trace_id`, `confidence`, `maintenance_plan`, `confirmation_required`, `recommended_action`, `decision`, `debug` |
 | `POST` | `/agent/stream` | 工业运维 Agent SSE 流式调用，逐步返回 intent、tool、risk 和 final answer 事件。 | Yes | SSE events: `intent_classified`, `tool_started`, `tool_finished`, `risk_checked`, `final_answer`, `error` |
 | `POST` | `/agent/confirm` | 对 high / critical 风险场景下的维护动作进行确认或拒绝，确认后才创建 mock ticket。 | Yes | `trace_id`, `decision`, `confirmation_required`, `recommended_action`, `risk_level`, `ticket`, `tools_used`, `sources`, `session_id`, `final_answer` |
-| `POST` | `/feedback` | 用户反馈接口规划项；当前代码尚未暴露该路由，可用于后续记录 answer quality、thumbs up/down 和人工标注。 | Yes | `feedback_id`, `status`, `message` |
-| `POST` | `predictive service /predict` | `predictive-maintenance-mini` 单条传感器样本推理接口，本系统 Tool 通过 `HEALTH_API_URL` 调用。 | No | `prediction`, `risk_level`, `risk_score`, `recommendation`, `probabilities`, `trigger_reasons`, `recommended_actions`, `model_version` |
-| `POST` | `predictive service /predict-batch` | `predictive-maintenance-mini` 批量传感器样本推理接口。 | No | `results`, `total`, `model_version` |
+| `POST` | `/feedback` | 用户反馈接口，用于记录 answer quality、thumbs up/down 或人工标注入口。 | Yes | `feedback_id`, `status`, `message` |
+| `POST` | `predictive service /predict` | `predictive-maintenance-mini` 单条传感器样本推理接口，本系统 Tool 通过 `HEALTH_API_URL` 调用。 | No | `prediction`, `prediction_label`, `risk_level`, `recommendation`, `probabilities` |
+| `POST` | `predictive service /predict-batch` | 批量推理扩展点；当前引用的 `predictive-maintenance-mini` OpenAPI 暂未暴露该接口，批量请求可在服务侧包装多次 `/predict`。 | No | `results`, `total`, `model_version` |
 
 ### 上传 PDF
 
 ```bash
-curl -X POST "http://127.0.0.1:8000/upload_pdf/" \
+curl -X POST "http://127.0.0.1:8000/documents/upload" \
   -H "Authorization: Bearer $TOKEN" \
   -F "file=@test.pdf"
 ```
@@ -312,6 +312,14 @@ make env-init
 # 编辑 .env，至少配置 DASHSCOPE_API_KEY、POSTGRES_USER、POSTGRES_PASSWORD、JWT_SECRET_KEY
 
 make docker-up
+```
+
+如遇到 Docker Hub 或 Debian 源访问较慢，可以通过环境变量覆盖镜像源，例如 `PYTHON_BASE_IMAGE`、`POSTGRES_BASE_IMAGE`、`REDIS_IMAGE`。`docker-compose.yml` 默认使用公共 ECR 的 Python / Redis 基础镜像，并在本仓库内构建 PostgreSQL + pgvector 镜像。
+
+如果本机 `8000`、`5432` 或 `6379` 已被占用，可以临时改端口启动：
+
+```bash
+API_PORT=58000 POSTGRES_PORT=55432 REDIS_PORT=56379 make docker-up
 ```
 
 访问：

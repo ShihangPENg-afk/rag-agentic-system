@@ -79,6 +79,16 @@ def _upload_pdf(client, headers, filename: str = "kb.pdf") -> dict:
     return response.json()
 
 
+def _upload_pdf_via_documents_alias(client, headers, filename: str = "kb.pdf") -> dict:
+    response = client.post(
+        "/documents/upload",
+        headers=headers,
+        files={"file": (filename, b"%PDF-1.4\nfake test pdf", "application/pdf")},
+    )
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
 def _update_pdf(client, headers, document_id: str, filename: str = "updated.pdf") -> dict:
     response = client.put(
         f"/documents/{document_id}",
@@ -129,6 +139,26 @@ def test_upload_document_generates_persisted_chunks(
     ]
     assert {str(chunk.user_id) for chunk in chunks} == {user["id"]}
     assert embeddings_count == 2
+
+
+def test_documents_upload_alias_builds_knowledge_base(
+    client,
+    monkeypatch,
+    register_user,
+    auth_headers,
+):
+    register_user("documents-upload-alias@example.com")
+    _stub_pdf_chunks(monkeypatch, ["alias persisted chunk"])
+
+    body = _upload_pdf_via_documents_alias(
+        client,
+        auth_headers("documents-upload-alias@example.com"),
+        filename="documents-upload.pdf",
+    )
+
+    assert body["status"] == "success"
+    assert body["chunks_count"] == 1
+    assert body["filename"] == "documents-upload.pdf"
 
 
 def test_retrieval_returns_related_persisted_chunk(

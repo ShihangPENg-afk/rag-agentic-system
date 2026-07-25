@@ -62,6 +62,84 @@ def test_ask_rag_success_with_mocked_llm(
     assert body["mode"] == "rag"
 
 
+def test_chat_alias_success_with_mocked_agent(
+    client,
+    monkeypatch,
+    register_user,
+    auth_headers,
+    create_document,
+):
+    user = register_user("chat-alias-user@example.com")
+    document = create_document(user["id"])
+
+    monkeypatch.setattr("app.api.routes_chat.increment_chat_rate_limit", lambda *a, **k: 1)
+    monkeypatch.setattr("app.api.routes_chat.should_check_external_network", lambda: False)
+    monkeypatch.setattr(
+        "app.api.routes_chat.chat_with_agent_state",
+        lambda request, user_id=None: {
+            "answer": "mocked agent answer",
+            "confidence": 0.9,
+            "sources": [],
+            "history": [(request.question, "mocked agent answer")],
+            "debug": None,
+        },
+    )
+
+    response = client.post(
+        "/chat",
+        headers=auth_headers("chat-alias-user@example.com"),
+        json={
+            "question": "What is in the document?",
+            "knowledge_base_id": str(document.id),
+            "history": [],
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["answer"] == "mocked agent answer"
+
+
+def test_ask_stream_returns_sse_final_answer(
+    client,
+    monkeypatch,
+    register_user,
+    auth_headers,
+    create_document,
+):
+    user = register_user("ask-stream-user@example.com")
+    document = create_document(user["id"])
+
+    monkeypatch.setattr("app.api.routes_chat.increment_chat_rate_limit", lambda *a, **k: 1)
+    monkeypatch.setattr("app.api.routes_chat.should_check_external_network", lambda: False)
+    monkeypatch.setattr(
+        "app.api.routes_chat.chat_with_agent_state",
+        lambda request, user_id=None: {
+            "answer": "streamed mocked answer",
+            "confidence": 0.8,
+            "sources": [],
+            "history": [(request.question, "streamed mocked answer")],
+            "debug": None,
+        },
+    )
+
+    with client.stream(
+        "POST",
+        "/ask/stream",
+        headers=auth_headers("ask-stream-user@example.com"),
+        json={
+            "question": "What is in the document?",
+            "knowledge_base_id": str(document.id),
+            "history": [],
+        },
+    ) as response:
+        body = response.read().decode("utf-8")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    assert "event: final_answer" in body
+    assert "streamed mocked answer" in body
+
+
 def test_ask_rag_passes_retriever_version_and_top_k(
     client,
     monkeypatch,
