@@ -96,13 +96,13 @@ test: ## 运行离线单元测试（无需 DashScope Key，CI 同款）
 	PYTHONPATH=. $(PYTHON) -m pytest tests/ -v
 
 test-agent: ## 运行 LangGraph Agent 本地测试
-	$(PYTHON) test_langgraph_agent.py $(PDF)
+	$(PYTHON) scripts/manual/langgraph_agent_check.py $(PDF)
 
 test-retrieval: ## 运行检索工具测试（默认 test.pdf）
-	$(PYTHON) test_retrieval_tool.py $(PDF)
+	$(PYTHON) scripts/manual/retrieval_tool_check.py $(PDF)
 
 test-doc-tools: ## 运行文档结构工具测试
-	$(PYTHON) test_document_tools.py $(PDF)
+	$(PYTHON) scripts/manual/document_tools_check.py $(PDF)
 
 smoke: ## 运行端到端冒烟测试 (BASE_URL + PDF 可覆盖)
 	bash $(SMOKE_SCRIPT) $(BASE_URL) $(PDF)

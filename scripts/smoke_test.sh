@@ -10,8 +10,10 @@ BASE_URL="${1:-http://127.0.0.1:8000}"
 PDF_PATH="${2:-test.pdf}"
 QUESTION="${SMOKE_QUESTION:-这份文档主要讲什么？}"
 
-TOTAL_STEPS=4
+TOTAL_STEPS=5
 STEP=0
+SMOKE_EMAIL="smoke_$(date +%s)_$$@example.com"
+SMOKE_PASSWORD="password123"
 
 if [ -x ".venv/bin/python" ]; then
   PYTHON_BIN=".venv/bin/python"
@@ -40,7 +42,7 @@ step_fail() {
 }
 
 echo "============================================================"
-echo "Smoke Test / Agentic RAG"
+echo "Smoke Test / RAG + LangGraph Agent"
 echo "============================================================"
 echo "BASE_URL : ${BASE_URL}"
 echo "PDF_PATH : ${PDF_PATH}"
@@ -75,7 +77,7 @@ import json
 with open("/tmp/rag_openapi.json") as f:
     data = json.load(f)
 title = data.get("info", {}).get("title", "")
-if title != "RAG PDF 智能问答系统":
+if title != "Industrial Maintenance Agent Platform":
     print(title)
     raise SystemExit(1)
 ' 2>/tmp/rag_smoke_title.err; then
@@ -85,12 +87,48 @@ if title != "RAG PDF 智能问答系统":
 fi
 
 # ---------------------------------------------------------------------------
-# 2. 上传 PDF
+# 2. 注册并登录
 # ---------------------------------------------------------------------------
-step_header "上传 PDF 到 /upload_pdf/ ..."
+step_header "注册并登录测试用户 ..."
 
-if ! UPLOAD_RESP="$(curl -fsS -X POST "${BASE_URL}/upload_pdf/" \
+AUTH_PAYLOAD="$("${PYTHON_BIN}" -c '
+import json, sys
+print(json.dumps({"email": sys.argv[1], "password": sys.argv[2]}))
+' "${SMOKE_EMAIL}" "${SMOKE_PASSWORD}")"
+
+if ! curl -fsS -X POST "${BASE_URL}/auth/register" \
+  -H "Content-Type: application/json" \
+  -d "${AUTH_PAYLOAD}" -o /dev/null; then
+  step_fail "注册测试用户失败"
+fi
+
+if ! LOGIN_RESP="$(curl -fsS -X POST "${BASE_URL}/auth/login" \
+  -H "Content-Type: application/json" \
+  -d "${AUTH_PAYLOAD}")"; then
+  step_fail "登录测试用户失败"
+fi
+
+if ! TOKEN="$(printf '%s' "${LOGIN_RESP}" | "${PYTHON_BIN}" -c '
+import json, sys
+data = json.load(sys.stdin)
+token = data.get("access_token")
+if not token:
+    sys.exit(1)
+print(token)
+')"; then
+  step_fail "无法从登录响应中解析 access_token"
+fi
+
+step_ok "测试用户已登录"
+
+# ---------------------------------------------------------------------------
+# 3. 上传 PDF
+# ---------------------------------------------------------------------------
+step_header "上传 PDF 到 /documents/upload ..."
+
+if ! UPLOAD_RESP="$(curl -fsS -X POST "${BASE_URL}/documents/upload" \
   -H "accept: application/json" \
+  -H "Authorization: Bearer ${TOKEN}" \
   -F "file=@${PDF_PATH}")"; then
   step_fail "上传 PDF 失败"
 fi
@@ -99,7 +137,7 @@ step_ok "PDF 上传成功"
 echo "${UPLOAD_RESP}"
 
 # ---------------------------------------------------------------------------
-# 3. 提取 knowledge_base_id
+# 4. 提取 knowledge_base_id
 # ---------------------------------------------------------------------------
 step_header "从上传结果提取 knowledge_base_id ..."
 
@@ -122,9 +160,9 @@ fi
 step_ok "knowledge_base_id=${KB_ID}"
 
 # ---------------------------------------------------------------------------
-# 4. Agent 问答
+# 5. Agent 问答
 # ---------------------------------------------------------------------------
-step_header "调用 /ask/ (debug=true) ..."
+step_header "调用 /ask (debug=true) ..."
 
 ASK_PAYLOAD=$("${PYTHON_BIN}" -c '
 import json, os, sys
@@ -136,10 +174,11 @@ print(json.dumps({
 }, ensure_ascii=False))
 ' "${QUESTION}" "${KB_ID}")
 
-if ! ASK_RESP="$(curl -fsS -X POST "${BASE_URL}/ask/" \
+if ! ASK_RESP="$(curl -fsS -X POST "${BASE_URL}/ask" \
+  -H "Authorization: Bearer ${TOKEN}" \
   -H "Content-Type: application/json" \
   -d "${ASK_PAYLOAD}")"; then
-  step_fail "调用 /ask/ 失败"
+  step_fail "调用 /ask 失败"
 fi
 
 if ! printf '%s' "${ASK_RESP}" | "${PYTHON_BIN}" -c '
@@ -156,7 +195,7 @@ if data.get("mode") != "agent":
     sys.exit(3)
 print(data["answer"][:200])
 ' >/tmp/rag_ask_preview.txt; then
-  step_fail "/ask/ 响应缺少 answer 或 mode 不是 agent"
+  step_fail "/ask 响应缺少 answer 或 mode 不是 agent"
 fi
 
 step_ok "Agent 问答成功"

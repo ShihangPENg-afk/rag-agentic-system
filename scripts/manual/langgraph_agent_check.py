@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-LangGraph Agent 本地测试脚本（最终版）
+LangGraph Agent 本地手动检查脚本
 
 功能：
 1. 构建知识库
@@ -14,9 +14,9 @@ LangGraph Agent 本地测试脚本（最终版）
    - 带 history 的连续两轮问题
 
 用法：
-    python test_langgraph_agent.py
-    python test_langgraph_agent.py test.pdf
-    python test_langgraph_agent.py /absolute/path/to/your.pdf
+    python scripts/manual/langgraph_agent_check.py
+    python scripts/manual/langgraph_agent_check.py test.pdf
+    python scripts/manual/langgraph_agent_check.py /absolute/path/to/your.pdf
 
 说明：
 - 如果不传 PDF 路径，默认使用当前项目根目录下的 test.pdf
@@ -28,6 +28,10 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 

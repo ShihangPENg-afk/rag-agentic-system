@@ -8,8 +8,8 @@ from app.core.lifespan import lifespan
 
 def create_app() -> FastAPI:
     app = FastAPI(
-        title="RAG PDF 智能问答系统",
-        description="基于FastAPI的PDF知识库问答服务",
+        title="Industrial Maintenance Agent Platform",
+        description="FastAPI service for RAG, LangGraph Agent workflows, pgvector retrieval, and maintenance tool orchestration.",
         lifespan=lifespan,
     )
     app.include_router(api_router)

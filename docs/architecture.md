@@ -1,115 +1,129 @@
-# Agentic RAG Architecture
+# Industrial Maintenance Agent Platform Architecture
 
-## 1. 项目目标
+本文档描述当前仓库的实际结构。主路径是 **FastAPI + RAG + LangGraph Agent + PostgreSQL + pgvector + Redis**，并通过 HTTP 调用独立的 `predictive-maintenance-mini` 预测服务。
 
-本项目将传统的「上传 PDF → 向量检索 → 回答」流程，升级为带有 **记忆（Memory）**、**工具调用（Tools）**、**多步推理（Multi-step Reasoning）** 的 Agentic RAG 系统，并通过 HTTP 集成独立的工业设备健康预测服务。
+## 1. 分层视图
 
-系统提供两种问答模式：
-
-- `/ask/`：LangGraph Agent 主入口
-- `/ask_rag/`：经典 RAG 回退入口
-
----
-
-## 2. 经典 RAG 链路
-
-经典链路用于基线对照与简单问答：
-
-1. 根据 `knowledge_base_id` 获取内存中的 `RAGSystem`
-2. 结合 `history` 做指代增强
-3. 使用 FAISS 检索相关 chunk
-4. 组装 Prompt
-5. 调用 DashScope 生成答案
-
-适用场景：简单事实问答、与 Agent 结果对照、排查 Agent 行为问题。
-
----
-
-## 3. Agent 链路
-
-默认问答入口 `/ask/` 走 LangGraph Agent：
-
-```text
-START → planner → agent ──(有 tool_calls)──→ tools → evaluator
-                      └──(无 tool_calls)──────────────→ evaluator
-evaluator ──(need_more_retrieval / next_sub_query)──→ agent
-          └──(enough_to_answer)──────────────────────→ answer → END
+```mermaid
+flowchart TB
+    frontend["Frontend / Streamlit"] --> api["FastAPI API Layer"]
+    api --> auth["Auth / JWT"]
+    api --> rag["RAG Layer"]
+    api --> agent["Agent Layer / LangGraph"]
+    rag --> pg[("PostgreSQL + pgvector")]
+    agent --> rag
+    agent --> llm["LLM Provider"]
+    agent --> predictive["Predictive Maintenance Service"]
+    api --> redis[("Redis")]
+    evals["Evaluation Module"] --> api
+    evals --> rag
 ```
 
-### 3.1 Agent 工具
+| 层 | 当前职责 |
+| --- | --- |
+| Frontend / Streamlit | 登录、上传 PDF、问答、查看 Debug Trace、调用健康预测演示页 |
+| FastAPI API Layer | 认证、文档管理、问答、Agent 调用、反馈、健康检查 |
+| Auth / JWT | `/auth/register` 与 `/auth/login` 创建用户并签发 Bearer token |
+| RAG Layer | PDF 解析、切块、embedding、pgvector dense retrieval、BM25 hybrid retrieval、rerank 扩展点 |
+| Agent Layer / LangGraph | 通用问答 Agent 与工业运维 Agent 两套状态图 |
+| PostgreSQL + pgvector | 用户、文档、chunks、embeddings、chat sessions、messages、QA logs |
+| Redis | chat 接口用户级限流；Redis 不可用时当前实现会放行并记录 warning |
+| Predictive Maintenance Service | sibling repo `predictive-maintenance-mini`，通过 `POST /predict` 提供传感器风险判断 |
+| Evaluation Module | pytest、smoke test、retrieval evaluation、可选 RAGAS |
 
-| 工具 | 适用场景 |
-|------|----------|
-| `retrieve_chunks` | 文档内容、概念、段落相关问答 |
-| `list_headings` | 章节、目录、文档结构（启发式） |
-| `count_tables` | 表格迹象统计（启发式） |
-| `check_machine_health` | 传感器读数、设备健康、产线风险预测 |
+## 2. FastAPI 入口
 
-`check_machine_health` 通过 HTTP 调用 [predictive-maintenance-mini](https://github.com/ShihangPENg-afk/predictive-maintenance-mini) 的 `POST /predict`（默认 `http://127.0.0.1:8010`），不在本仓库内嵌 ML 模型。
+FastAPI app 在 `app/main.py` 创建，路由聚合在 `app/api/routes.py`。
 
-### 3.2 对话 Memory 与 Debug
+主要路由文件：
 
-- 客户端在请求体中传入 `history`，服务端保留最近 **3 轮**。
-- `debug: true` 时返回 `tool_trace`、`reasoning_snapshot`、`retrieved_evidence_preview`、`memory_snapshot`。
+- `app/api/routes_auth.py`：JWT 注册登录
+- `app/api/upload.py`：`/documents/upload` 与兼容旧路径 `/upload_pdf/`
+- `app/api/routes_documents.py`：文档列表、删除、替换、检索、QA logs
+- `app/api/routes_chat.py`：`/ask`、`/chat`、`/ask/stream`、`/ask_rag/`
+- `app/api/routes_agent.py`：`/agent/invoke`、`/agent/stream`、`/agent/confirm`
+- `app/api/routes_feedback.py`：用户反馈
 
----
-
-## 4. 混合持久化（PostgreSQL + FAISS）
-
-```text
-上传 PDF → 切块 / 向量化 → FAISS 索引（进程内，可问答）
-              │
-              ├─→ PostgreSQL documents（元信息：文件名、块数、状态）
-              └─→ PostgreSQL qa_logs（问答历史 + 可选 debug JSONB）
-```
-
-**边界：** 向量索引与 chunk 文本保存在**进程内存**；PostgreSQL **不**存储向量。服务重启后，历史 QA 日志仍可查询，但 FAISS 索引丢失，需重新上传 PDF 才能继续问答。
-
-数据库不可用时，核心 RAG 与 Agent 功能仍可运行；元数据与日志写入会降级为 warning，不阻断问答。
-
----
-
-## 5. Streamlit UI
-
-`ui/streamlit_app.py` 通过 HTTP 调用后端，不直连 FAISS 或 PostgreSQL：
-
-| 配置项 | 默认 | 用途 |
-|--------|------|------|
-| `API_BASE_URL` | `http://127.0.0.1:8000` | PDF 上传、聊天、Debug Trace、历史记录 |
-| `HEALTH_API_URL` | `http://127.0.0.1:8010` | 「设备健康预测」Tab 直连工业 API |
-
----
-
-## 6. 工业预测服务联动
+## 3. RAG 数据流
 
 ```text
-rag-agentic-system (:8000)                    predictive-maintenance-mini (:8010)
-  check_machine_health ──HTTP──►     POST /predict
-  Streamlit 设备健康 Tab ──HTTP──►  /health · /model-info · /predict
+PDF upload
+  -> validate filename / PDF magic / size
+  -> pypdf text extraction
+  -> RecursiveCharacterTextSplitter
+  -> embedding provider
+  -> PostgreSQL documents / chunks
+  -> pgvector chunk_embeddings
+  -> optional in-memory FAISS fallback registration
 ```
 
-两服务**解耦**：无共享进程、无共享数据库；工业 API 可独立升级或替换。
+当前主检索能力已经不再依赖进程内 FAISS。chunks 与 embeddings 会写入 PostgreSQL + pgvector，服务重启后仍可通过 pgvector 检索。FAISS 仍作为 v1 兼容 fallback 保留，用于说明早期 RAG baseline 与异常回退路径。
 
----
+## 4. 检索版本
 
-## 7. 部署拓扑
+| 版本 | 实现 | 说明 |
+| --- | --- | --- |
+| v1 FAISS baseline | `app/retrievers/retriever_v1_faiss.py` | 早期进程内索引，当前作为兼容 fallback |
+| v1 pgvector baseline | `app/retrievers/retriever_v2_pgvector.py` | 单路 dense retrieval，按用户、文档、集合过滤 |
+| v2 hybrid | `app/retrievers/retriever_v2_hybrid.py` | pgvector dense retrieval + BM25 keyword retrieval + fusion |
+| v2 hybrid + rerank | `app/retrievers/rerank.py` | 对候选结果二次排序；默认 mock provider 便于离线测试 |
 
-| 组件 | 端口 | 说明 |
-|------|------|------|
-| rag-agentic-system API | 8000 | FastAPI + LangGraph |
-| PostgreSQL | 5432 | 元数据与 QA 日志 |
-| predictive-maintenance-mini | 8010 | 独立仓库（[GitHub](https://github.com/ShihangPENg-afk/predictive-maintenance-mini)），Docker 部署 |
-| Streamlit UI | 8501 | 宿主机启动 |
+不要在文档中写固定提升比例。v1/v2 结果需要用同一批文档和 `evals/evaluate_retrieval.py` 复现后再报告。
 
-Docker Compose（rag-agentic-system 仓库）包含 `postgres` 与 `rag-agentic-system`；工业服务与 Streamlit 需单独启动。双栈验收：`make stack-verify`。
+## 5. 通用 RAG + LangGraph Agent
 
----
+`POST /ask` 与 `POST /chat` 调用 `app/agent/graph.py`：
 
-## 8. 当前限制
+```text
+START
+  -> planner
+  -> agent
+  -> tools?        # retrieve_chunks / list_headings / count_tables / check_machine_health
+  -> evaluator
+  -> agent?        # evidence 不足或多跳子问题未完成时继续
+  -> answer
+  -> END
+```
 
-- FAISS 向量不持久化；PostgreSQL 不存向量或 chunk 正文。
-- LoRA 微调模型**未接入**；生成仍走 DashScope `qwen-plus`。
-- 工业预测模型为 **baseline 演示**，非生产级。
-- 无生产级鉴权、限流与 CI/CD；未云部署。
+这个 Agent 适合文档问答、结构查询、表格迹象统计和简单设备健康解释。`debug=true` 时会返回工具轨迹、证据预览、memory snapshot 和 reasoning snapshot。
 
-更多细节见 [README.md](../README.md) 与 [industrial_demo_guide.md](industrial_demo_guide.md)。
+## 6. 工业运维 Agent
+
+`POST /agent/invoke` 调用 `app/agents/maintenance_agent/graph.py`：
+
+```text
+START
+  -> classify_intent
+  -> retrieve_manual_node?
+  -> check_health_node?
+  -> generate_plan_node
+  -> require_confirmation_node?
+  -> create_ticket_node?
+  -> final_response_node
+  -> END
+```
+
+它面向 Industrial Maintenance 场景：先判断意图，再按需查手册、调预测服务、生成维护建议。`high` / `critical` 风险不会直接创建 mock ticket，而是返回 `confirmation_required=true` 和 `trace_id`，等待 `/agent/confirm`。
+
+## 7. predictive-maintenance-mini Tool 边界
+
+本仓库不内嵌预测模型。`check_machine_health` 通过 HTTP 调用：
+
+```text
+POST {HEALTH_API_URL}/predict
+```
+
+默认服务地址为 `http://127.0.0.1:8010`。如果服务不可用，维护 Agent 中的工具层可以走 deterministic fallback，以保证本地流程可演示。这个 fallback 只用于联调，不代表真实模型效果。
+
+## 8. RAG vs LoRA
+
+本仓库主线是 RAG + Agent：动态文档知识通过 pgvector 检索进入上下文，回答保留 sources。LoRA 实验在 `llm-finetune-for-manufacturing` 独立仓库中，尚未接入本仓库默认运行链路。
+
+LoRA 后续适合优化回答格式和领域表达，但不能替代手册知识库，也不能在未评估前声明效果提升。
+
+## 9. 当前边界
+
+- Streamlit 是本地演示 UI，不覆盖复杂权限管理和企业前端体验。
+- `list_headings` 与 `count_tables` 是基于文本 chunk 的启发式工具，不是 PDF 原生结构解析器。
+- `RERANK_PROVIDER=mock` 时只能验证二阶段排序流程，不代表真实 rerank 模型能力。
+- 预测服务输出仅用于工程联调和面试展示，不应直接作为设备维护决策依据。

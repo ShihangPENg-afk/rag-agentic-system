@@ -35,44 +35,72 @@
 
 ## 系统架构
 
-```text
-PDF 手册上传
-    |
-    v
-pypdf 解析 -> chunking -> embedding
-    |
-    v
-PostgreSQL + pgvector
-documents / chunks / chunk_embeddings / qa_logs
-    |
-    +----------------------------+
-    |                            |
-    v                            v
-POST /ask/                 POST /agent/invoke
-通用 Agentic RAG            工业运维 Agent
-    |                            |
-    v                            v
-LangGraph                 classify_intent
-planner                   -> retrieve_manual
--> agent/tool calling      -> check_machine_health
--> evaluator loop          -> generate_maintenance_plan
--> answer                  -> human confirmation
-    |                            |
-    +-------------+--------------+
-                  |
-                  v
-Tool: check_machine_health
-HTTP POST {HEALTH_API_URL}/predict
-                  |
-                  v
-predictive-maintenance-mini (:8010)
+```mermaid
+flowchart TB
+    user(["User"])
+
+    subgraph frontend["Frontend / Streamlit"]
+        ui["Upload PDFs<br/>Chat<br/>Debug Trace<br/>Health Demo"]
+    end
+
+    subgraph api["FastAPI API Layer"]
+        auth["Auth / JWT"]
+        docs_api["Documents API<br/>/documents/upload<br/>/documents/retrieve"]
+        chat_api["Chat API<br/>/ask<br/>/ask/stream"]
+        agent_api["Agent API<br/>/agent/invoke<br/>/agent/stream<br/>/agent/confirm"]
+        feedback_api["Feedback API<br/>/feedback"]
+    end
+
+    subgraph agent["Agent Layer / LangGraph"]
+        planner["planner"]
+        tool_loop["tool calling loop"]
+        evaluator["evaluator"]
+        maintenance["maintenance workflow<br/>classify -> retrieve -> health -> plan -> confirm"]
+    end
+
+    subgraph rag["RAG Layer"]
+        parser["PDF parsing + chunking"]
+        retrieval["v1 dense baseline<br/>v2 hybrid + rerank"]
+        sources["sources + confidence + debug trace"]
+    end
+
+    pg[("PostgreSQL + pgvector<br/>documents<br/>chunks<br/>chunk_embeddings<br/>qa_logs<br/>chat sessions")]
+    redis[("Redis<br/>chat rate limiting")]
+    llm["LLM Provider<br/>DashScope / local OpenAI-compatible / mock"]
+    predictive["Predictive Maintenance Service<br/>predictive-maintenance-mini<br/>POST /predict"]
+    evals["Evaluation Module<br/>pytest<br/>smoke test<br/>retrieval eval<br/>RAGAS optional"]
+
+    user --> ui
+    ui --> api
+    api --> auth
+    auth --> docs_api
+    auth --> chat_api
+    auth --> agent_api
+    auth --> feedback_api
+
+    docs_api --> parser --> pg
+    chat_api --> agent
+    agent_api --> maintenance
+    planner --> tool_loop --> evaluator
+    tool_loop --> retrieval
+    maintenance --> retrieval
+    retrieval --> pg
+    retrieval --> sources
+    agent --> llm
+    maintenance --> llm
+    maintenance --> predictive
+    chat_api --> redis
+    agent_api --> redis
+    feedback_api --> pg
+    evals --> api
+    evals --> retrieval
 ```
 
 Docker Compose 会启动：
 
 - `rag-agentic-system`，FastAPI 后端，默认 `http://127.0.0.1:8000`
 - `postgres`，本仓库基于 PostgreSQL Alpine 构建并安装 pgvector，保存文档、chunks、embeddings 和 QA 日志
-- `redis`，用于 `/ask/` 与 `/ask_rag/` 的用户级限流
+- `redis`，用于 `/ask` 与 `/ask_rag/` 的用户级限流
 
 ## 核心能力
 
@@ -80,7 +108,7 @@ Docker Compose 会启动：
 | --- | --- |
 | PDF 知识库构建 | 支持单文件和批量 PDF 上传，校验 PDF 文件头，解析后切块并入库 |
 | 持久化向量库 | chunks 和 embeddings 写入 PostgreSQL + pgvector，服务重启后可继续检索 |
-| Agentic RAG | `/ask/` 默认走 LangGraph Agent，可调用 `retrieve_chunks`、`list_headings`、`count_tables`、`check_machine_health` |
+| RAG + LangGraph Agent | `/ask` 默认走 LangGraph Agent，可调用 `retrieve_chunks`、`list_headings`、`count_tables`、`check_machine_health` |
 | 经典 RAG baseline | `/ask_rag/` 提供“检索 -> Prompt -> 生成”的对照链路 |
 | Hybrid Retrieval | v2 支持 pgvector dense retrieval + BM25 keyword retrieval + fusion + optional rerank |
 | 设备健康 Tool | Agent 通过 HTTP 调用 `predictive-maintenance-mini` 的 `/predict`，将传感器数据转成风险判断 |
@@ -90,9 +118,9 @@ Docker Compose 会启动：
 
 ## Agent 工作流
 
-### 1. 通用 Agentic RAG: `POST /ask/`
+### 1. 通用 RAG + LangGraph Agent: `POST /ask`
 
-`/ask/` 适合“围绕上传手册提问，必要时结合传感器数据判断设备状态”的场景。LangGraph 状态图在 [app/agent/graph.py](app/agent/graph.py) 中定义：
+`/ask` 适合“围绕上传手册提问，必要时结合传感器数据判断设备状态”的场景。LangGraph 状态图在 [app/agent/graph.py](app/agent/graph.py) 中定义：
 
 ```text
 START
@@ -166,9 +194,9 @@ export TOKEN="<access_token>"
 | --- | --- | --- | --- | --- |
 | `POST` | `/auth/register` | 注册新用户，创建本地账号。 | No | `id`, `email`, `is_active`, `created_at` |
 | `POST` | `/auth/login` | 用户登录，返回后续业务接口使用的 Bearer token。 | No | `access_token`, `token_type` |
-| `POST` | `/documents/upload` | 上传单个 PDF 并构建知识库；兼容旧路径 `POST /upload_pdf/`。 | Yes | `knowledge_base_id`, `collection_id`, `status`, `message`, `chunks_count`, `filename` |
+| `POST` | `/documents/upload` | 上传单个 PDF 并构建知识库；保留 `POST /upload_pdf/` 作为兼容路径。 | Yes | `knowledge_base_id`, `collection_id`, `status`, `message`, `chunks_count`, `filename` |
 | `DELETE` | `/documents/{document_id}` | 删除当前用户的文档，并级联删除 chunks 与 embeddings。 | Yes | `document_id`, `deleted`, `chunks_deleted`, `embeddings_deleted` |
-| `POST` | `/ask` 或 `/chat` | Agentic RAG 问答入口；兼容旧路径 `POST /ask/`，支持 `retriever_version`, `top_k`, `use_rerank`, `history`, `debug`。 | Yes | `answer`, `confidence`, `sources`, `knowledge_base_id`, `session_id`, `history`, `debug`, `mode` |
+| `POST` | `/ask` 或 `/chat` | RAG + LangGraph Agent 问答入口；保留 `POST /ask/` 作为兼容路径，支持 `retriever_version`, `top_k`, `use_rerank`, `history`, `debug`。 | Yes | `answer`, `confidence`, `sources`, `knowledge_base_id`, `session_id`, `history`, `debug`, `mode` |
 | `POST` | `/ask/stream` | 通用问答 SSE 流式接口，返回最终回答事件；工业运维节点级流式过程见 `POST /agent/stream`。 | Yes | SSE events: `final_answer`, `error` |
 | `POST` | `/agent/invoke` | 工业运维 Agent 普通调用：手册检索、健康预测、维护计划生成和高风险确认判断。 | Yes | `final_answer`, `risk_level`, `tools_used`, `sources`, `trace_id`, `confidence`, `maintenance_plan`, `confirmation_required`, `recommended_action`, `decision`, `debug` |
 | `POST` | `/agent/stream` | 工业运维 Agent SSE 流式调用，逐步返回 intent、tool、risk 和 final answer 事件。 | Yes | SSE events: `intent_classified`, `tool_started`, `tool_finished`, `risk_checked`, `final_answer`, `error` |
@@ -198,10 +226,10 @@ curl -X POST "http://127.0.0.1:8000/documents/upload" \
 }
 ```
 
-### Agentic RAG 问答
+### RAG + LangGraph Agent 问答
 
 ```bash
-curl -X POST "http://127.0.0.1:8000/ask/" \
+curl -X POST "http://127.0.0.1:8000/ask" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -243,7 +271,7 @@ curl -X POST "http://127.0.0.1:8000/ask_rag/" \
   }'
 ```
 
-`/ask_rag/` 不走 LangGraph 工具循环，适合和 `/ask/` 对照演示。
+`/ask_rag/` 不走 LangGraph 工具循环，适合和 `/ask` 对照演示。
 
 ### 检索接口
 
@@ -408,7 +436,7 @@ MAINTENANCE_HEALTH_PROVIDER=http
 
 Tool 调用边界：
 
-- `/ask/` 中的 `check_machine_health(sensor_data)` 会请求 `POST {HEALTH_API_URL}/predict`
+- `/ask` 中的 `check_machine_health(sensor_data)` 会请求 `POST {HEALTH_API_URL}/predict`
 - `/agent/invoke` 中的 `check_health_node` 会优先调用同一预测服务，并将结果标准化为 `prediction`、`risk_level`、`risk_score`、`trigger_reasons`、`recommended_actions`
 - Streamlit 的“设备健康预测”Tab 可以直接调用 `predictive-maintenance-mini`
 - 如果预测服务未启动或超时，工业运维 Agent 会走 deterministic mock fallback，保证 Agent 流程可演示；这不代表真实模型效果
@@ -430,7 +458,7 @@ make stack-verify
 - `pgvector` dense retrieval 是当前的持久化 baseline
 - `FAISS` 是更早期的进程内兼容 fallback
 
-也就是说，`/ask/` 的 v1 路径本质上是“单路 dense 检索 + 兼容回退”，而 v2 才是“多路召回 + rerank”。这里不写固定效果数字，真实效果应通过 `evals/golden_questions.jsonl` 在同一批文档上复现。
+也就是说，`/ask` 的 v1 路径本质上是“单路 dense 检索 + 兼容回退”，而 v2 才是“多路召回 + rerank”。这里不写固定效果数字，真实效果应通过 `evals/golden_questions.jsonl` 在同一批文档上复现。
 
 | 版本 | 实现 | 特点 | 适合演示 |
 | --- | --- | --- | --- |
@@ -575,7 +603,7 @@ LOCAL_LLM_MOCK=true
 rag-agentic-system/
 ├── app/
 │   ├── api/                         # FastAPI 路由
-│   ├── agent/                       # /ask/ 通用 LangGraph Agentic RAG
+│   ├── agent/                       # /ask 通用 RAG + LangGraph Agent
 │   ├── agents/maintenance_agent/    # /agent/* 工业运维 Agent
 │   ├── db/                          # 数据库连接与初始化
 │   ├── models/                      # SQLAlchemy models

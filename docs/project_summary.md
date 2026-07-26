@@ -1,82 +1,69 @@
 # 项目总览
 
-> 更新日期：2026-06-15 · 关联文档：[README.md](../README.md) · [architecture.md](architecture.md) · [industrial_demo_guide.md](industrial_demo_guide.md)
+本组项目围绕工业设备维护场景拆成三个独立仓库。它们可以联动演示，但代码、依赖和部署边界保持清楚。
 
-围绕 **PDF 知识处理** 与 **工业设备健康预测**，维护三个**相关但解耦**的独立 GitHub 仓库（见下表）。代码、依赖与部署互不引用；**LoRA 权重尚未接入 rag-agentic-system**，问答生成仍调用 DashScope 在线 API（`qwen-plus`）。
+| 仓库 | 定位 | 关系 |
+| --- | --- | --- |
+| `rag-agentic-system` | Industrial Maintenance Agent Platform：FastAPI、RAG、LangGraph Agent、PostgreSQL + pgvector、Redis、Streamlit | 主应用，本仓库 |
+| `predictive-maintenance-mini` | 工业设备健康预测 Tool 服务，FastAPI 暴露 `POST /predict` | 本仓库通过 HTTP 调用 |
+| `llm-finetune-for-manufacturing` | LoRA 微调流程验证 | 尚未接入本仓库默认问答链路 |
 
-| 仓库 | GitHub |
-|------|--------|
-| rag-agentic-system | https://github.com/ShihangPENg-afk/rag-agentic-system |
-| predictive-maintenance-mini | https://github.com/ShihangPENg-afk/predictive-maintenance-mini |
-| llm-finetune-for-manufacturing | https://github.com/ShihangPENg-afk/llm-finetune-for-manufacturing |
+## rag-agentic-system
 
-## 演示视频
+核心链路：上传设备手册 PDF 后，系统解析文本、切块、生成 embeddings，并写入 PostgreSQL + pgvector。用户提问时，FastAPI 接口调用 RAG + LangGraph Agent，Agent 可根据问题调用检索工具、文档结构工具和设备健康预测 Tool。
 
-| 平台 | 内容 |
-|------|------|
-| **百度网盘** | 文件 `rag-demo.mp4` · [链接](https://pan.baidu.com/s/1G3FDGbw7h37hDuddjUFpRg) · 提取码 `iqcq` |
-| **文字版 Demo** | 见 [ui_demo_guide.md](ui_demo_guide.md) 与 [industrial_demo_guide.md](industrial_demo_guide.md) |
+| 能力方向 | 当前实现 |
+| --- | --- |
+| API | FastAPI，JWT 鉴权，OpenAPI 文档 |
+| RAG | pgvector dense retrieval，v2 hybrid retrieval，optional rerank，FAISS fallback |
+| Agent | `/ask` 通用 RAG + LangGraph Agent；`/agent/*` 工业运维 Agent |
+| 数据 | PostgreSQL + pgvector 保存用户、文档、chunks、embeddings、QA logs、chat sessions |
+| 缓存/限流 | Redis 用户级 chat rate limit |
+| UI | Streamlit 本地演示：登录、上传、问答、Debug Trace、健康预测 |
+| 测试 | pytest、smoke test、retrieval evaluation、可选 RAGAS |
+| 部署 | Docker Compose 启动 API、PostgreSQL + pgvector、Redis |
 
-涵盖 PDF 上传问答、Debug Trace、PostgreSQL 历史记录、设备健康预测 Tab 及 Agent 调用 `check_machine_health`。
+## predictive-maintenance-mini
 
----
+该仓库是独立预测服务，主要用于演示“传感器数据 -> 健康/风险判断”的 Tool 调用方式。
 
-## rag-agentic-system（Agentic RAG + Agent 工具集成）
+本仓库调用方式：
 
-基于 **FastAPI + LangGraph + FAISS + PostgreSQL + Streamlit + DashScope**，实现 PDF 上传 → 切块向量化 → Agent 问答，并通过 HTTP 联动工业预测服务：
+```text
+LangGraph Agent -> check_machine_health -> POST {HEALTH_API_URL}/predict
+```
 
-| 能力方向 | 实现要点 |
-|----------|----------|
-| **RAG / Agent** | `POST /ask/`：planner → agent ⇄ tools → evaluator → answer；工具含 `retrieve_chunks`、`list_headings`、`count_tables`、**`check_machine_health`** |
-| **对照基线** | `POST /ask_rag/`：经典 RAG 单链路，用于与 Agent 对照 |
-| **Web 前端** | Streamlit UI：PDF 构建、多轮聊天、Debug Trace 四面板、「设备健康预测」Tab |
-| **结构化日志** | PostgreSQL `documents` / `qa_logs`（含 debug JSONB）；向量检索仍为进程内 FAISS |
-| **DevOps** | Docker Compose（API + PostgreSQL）；`make smoke`（4/4）；`make stack-up` / `stack-verify` 双服务栈（8000 + 8010） |
-| **RAG 评估** | RAGAS 基线（`test.pdf`，3/10 样本）：faithfulness **0.8750**、answer_relevancy **0.8858** |
+默认端口为 `8010`。预测结果用于工程联调和面试展示，不应直接作为设备维护决策依据。
 
-**工业联动：** `check_machine_health` → `app/tools/machine_health_tool.py` → `POST {HEALTH_API_URL}/predict`（默认 `http://127.0.0.1:8010`）。`debug.tool_trace` 可观测工具名、输入与输出预览；与 PDF 问答链路解耦、并存。
+## llm-finetune-for-manufacturing
 
-**已知边界：** FAISS 向量不持久化（重启需重新上传 PDF）；无 CI/CD、无生产级鉴权；LoRA 未接入。
+该仓库用于验证 LoRA 数据构造和训练流程。它不改变本仓库的默认推理路径。
 
----
+当前边界：
 
-## predictive-maintenance-mini（工业预测）
-
-独立工业制造质量分类 Demo：EDA → RandomForest 训练 → MLflow → FastAPI → Docker。
-
-| 阶段 | 产出 |
-|------|------|
-| EDA | `scripts/eda.py` → `docs/eda_summary.md` |
-| 训练 | `artifacts/model.pkl`、`metrics.json`、`schema.json` |
-| 推理 API | `:8010` — `/health`、`/model-info`、`POST /predict`（含 `prediction`、`risk_level`、`recommendation`） |
-| 容器化 | `make docker-up` / `make docker-verify` |
-
-**定位：** 传统 ML baseline，演示「能训练、能服务化、能 Docker 化」，**非生产级模型**。rag-agentic-system 通过 HTTP 调用，不内嵌训练或模型文件。
-
----
-
-## llm-finetune-for-manufacturing（LoRA 微调）
-
-跑通 PDF → Alpaca 数据集（**132** 条）→ LLaMA-Factory LoRA 微调 → 权重保存全流程：以 Qwen2-7B-Instruct 为基座，在本地 CPU 抽样 **50** 条、1 epoch 完成流程验证，产出 adapter 权重。定位为**管线可复现验证**，非可用领域模型；before/after 评测与 GPU 全量训练尚未完成。
-
----
+- 本仓库默认 LLM provider 仍是 DashScope 或本地 OpenAI-compatible endpoint。
+- LoRA adapter 未加载到 `rag-agentic-system`。
+- 不基于 LoRA 实验声明线上效果提升。
 
 ## 三仓库关系
 
+```text
+rag-agentic-system (:8000)
+  FastAPI / RAG / LangGraph Agent / pgvector / Redis
+        |
+        | HTTP POST /predict
+        v
+predictive-maintenance-mini (:8010)
+  Sensor features -> prediction / risk_level
+
+llm-finetune-for-manufacturing
+  LoRA workflow validation, not wired into default runtime
 ```
-rag-agentic-system (:8000)          predictive-maintenance-mini (:8010)
-  PDF / Agent / PG  ──HTTP──►  传感器 ML 推理
-  Streamlit (:8501) ──直连──►  设备健康 Tab
 
-llm-finetune-for-manufacturing        （独立实验，尚未接入 rag-agentic-system）
-  PDF → LoRA adapter
-```
+## 推荐阅读
 
----
-
-## 核心产出
-
-- **代码：** `rag-agentic-system`、`predictive-maintenance-mini` 双仓库可独立运行与 Docker 部署
-- **文档：** [README.md](../README.md)、[ui_demo_guide.md](ui_demo_guide.md)、[industrial_demo_guide.md](industrial_demo_guide.md)、[delivery_checklist.md](delivery_checklist.md)
-- **演示：** 百度网盘 `rag-demo.mp4`（见上表）
-- **验收：** `make smoke`（RAG 主链路）、`make stack-verify`（双服务联动）
+- [README.md](../README.md)
+- [architecture.md](architecture.md)
+- [agent_workflow.md](agent_workflow.md)
+- [rag_vs_lora.md](rag_vs_lora.md)
+- [delivery_checklist.md](delivery_checklist.md)

@@ -9,7 +9,7 @@
 4. 测试 retrieve_chunks_tool（做对照）
 
 用法：
-    python test_document_tools.py test.pdf
+    python scripts/manual/document_tools_check.py test.pdf
 """
 
 from __future__ import annotations
@@ -17,6 +17,10 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 from app.services.upload_service import create_knowledge_base_from_saved_pdf
 from app.tools.document_tools import list_headings_tool, count_tables_tool

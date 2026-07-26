@@ -48,7 +48,7 @@ data = json.loads(sys.argv[1])
 print(data.get("info", {}).get("title", ""))
 ' "${RAG_OPENAPI}")"
 
-if [ "${RAG_TITLE}" != "RAG PDF 智能问答系统" ]; then
+if [ "${RAG_TITLE}" != "Industrial Maintenance Agent Platform" ]; then
   step_fail "${RAG_BASE_URL} 不是 rag-agentic-system（当前: ${RAG_TITLE:-未知}）。请停止占用 8000 端口的其他 uvicorn 进程，仅保留 Docker 中的 rag-agentic-system。"
 fi
 step_ok "rag-agentic-system OpenAPI 标题正确"

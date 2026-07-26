@@ -9,9 +9,11 @@ cd "${PROJECT_ROOT}"
 BASE_URL="${1:-http://127.0.0.1:8000}"
 PDF_PATH="${2:-test.pdf}"
 
-TOTAL_STEPS=4
+TOTAL_STEPS=5
 STEP=0
 PROBE_KB_ID="00000000-0000-0000-0000-000000000000"
+DEMO_EMAIL="demo_check_$(date +%s)_$$@example.com"
+DEMO_PASSWORD="password123"
 
 if [ -x ".venv/bin/python" ]; then
   PYTHON_BIN=".venv/bin/python"
@@ -78,11 +80,47 @@ fi
 step_ok "/openapi.json 可访问且格式正确"
 
 # ---------------------------------------------------------------------------
-# 2. 最近上传文档（PostgreSQL）
+# 2. 注册并登录
+# ---------------------------------------------------------------------------
+step_header "注册并登录测试用户..."
+
+AUTH_PAYLOAD="$(${PYTHON_BIN} -c '
+import json, sys
+print(json.dumps({"email": sys.argv[1], "password": sys.argv[2]}))
+' "${DEMO_EMAIL}" "${DEMO_PASSWORD}")"
+
+if ! curl -fsS -X POST "${BASE_URL}/auth/register" \
+  -H "Content-Type: application/json" \
+  -d "${AUTH_PAYLOAD}" -o /dev/null; then
+  step_fail "注册测试用户失败"
+fi
+
+if ! LOGIN_RESP="$(curl -fsS -X POST "${BASE_URL}/auth/login" \
+  -H "Content-Type: application/json" \
+  -d "${AUTH_PAYLOAD}")"; then
+  step_fail "登录测试用户失败"
+fi
+
+if ! TOKEN="$(printf '%s' "${LOGIN_RESP}" | "${PYTHON_BIN}" -c '
+import json, sys
+data = json.load(sys.stdin)
+token = data.get("access_token")
+if not token:
+    sys.exit(1)
+print(token)
+')"; then
+  step_fail "无法从登录响应中解析 access_token"
+fi
+
+step_ok "测试用户已登录"
+
+# ---------------------------------------------------------------------------
+# 3. 最近上传文档（PostgreSQL）
 # ---------------------------------------------------------------------------
 step_header "检查 GET /documents/ 是否可用..."
 
-if ! DOCS_RESP="$(curl -fsS "${BASE_URL}/documents/?limit=5")"; then
+if ! DOCS_RESP="$(curl -fsS "${BASE_URL}/documents/?limit=5" \
+  -H "Authorization: Bearer ${TOKEN}")"; then
   step_fail "无法访问 ${BASE_URL}/documents/"
 fi
 
@@ -118,7 +156,7 @@ KB_ID_FROM_DOCS="${DOCS_INFO#*|}"
 step_ok "/documents/ 可访问（total=${DOCS_TOTAL}）"
 
 # ---------------------------------------------------------------------------
-# 3. 历史问答日志（PostgreSQL）
+# 4. 历史问答日志（PostgreSQL）
 # ---------------------------------------------------------------------------
 step_header "检查 GET /qa_logs/ 是否可用..."
 
@@ -129,7 +167,8 @@ else
   echo "   （使用最近文档 knowledge_base_id=${QA_KB_ID}）"
 fi
 
-if ! QA_LOGS_RESP="$(curl -fsS "${BASE_URL}/qa_logs/?knowledge_base_id=${QA_KB_ID}&limit=5")"; then
+if ! QA_LOGS_RESP="$(curl -fsS "${BASE_URL}/qa_logs/?knowledge_base_id=${QA_KB_ID}&limit=5" \
+  -H "Authorization: Bearer ${TOKEN}")"; then
   step_fail "无法访问 ${BASE_URL}/qa_logs/?knowledge_base_id=${QA_KB_ID}"
 fi
 
@@ -157,7 +196,7 @@ fi
 step_ok "/qa_logs/ 可访问（total=${QA_LOGS_TOTAL}）"
 
 # ---------------------------------------------------------------------------
-# 4. 端到端 Smoke Test
+# 5. 端到端 Smoke Test
 # ---------------------------------------------------------------------------
 step_header "运行 scripts/smoke_test.sh ..."
 

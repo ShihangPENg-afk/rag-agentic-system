@@ -17,12 +17,12 @@ SIDEBAR_KB_SELECT_KEY = "sidebar_available_kb_select"
 
 
 st.set_page_config(
-    page_title="Agentic RAG 文档问答助手",
-    page_icon="📄",
+    page_title="Industrial Maintenance Agent Platform",
+    page_icon="🔧",
     layout="wide",
 )
 
-st.title("Agentic RAG 文档问答助手")
+st.title("Industrial Maintenance Agent Platform")
 
 
 def _init_session_state() -> None:
@@ -38,6 +38,9 @@ def _init_session_state() -> None:
         "last_upload_response": None,
         "last_batch_upload_response": None,
         "selected_kb_from_list": None,
+        "auth_token": None,
+        "auth_email": None,
+        "auth_status": None,
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -65,6 +68,35 @@ def _format_list_error(exc: requests.RequestException, resource: str) -> str:
     return f"获取{resource}时发生网络错误：{exc}"
 
 
+def _auth_headers(token: str | None) -> dict[str, str]:
+    if not token:
+        return {}
+    return {"Authorization": f"Bearer {token}"}
+
+
+def register_user(api_base_url: str, email: str, password: str) -> dict:
+    response = requests.post(
+        f"{api_base_url}/auth/register",
+        json={"email": email, "password": password},
+        timeout=LIST_TIMEOUT_SECONDS,
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+def login_user(api_base_url: str, email: str, password: str) -> str:
+    response = requests.post(
+        f"{api_base_url}/auth/login",
+        json={"email": email, "password": password},
+        timeout=LIST_TIMEOUT_SECONDS,
+    )
+    response.raise_for_status()
+    token = response.json().get("access_token")
+    if not token:
+        raise ValueError("登录响应中缺少 access_token")
+    return token
+
+
 def check_backend_openapi(api_base_url: str) -> tuple[bool, str | None]:
     try:
         response = requests.get(
@@ -83,10 +115,11 @@ def check_backend_openapi(api_base_url: str) -> tuple[bool, str | None]:
         return False, f"检查后端时发生网络错误：{exc}"
 
 
-def fetch_documents(api_base_url: str, limit: int = 50) -> list[dict]:
+def fetch_documents(api_base_url: str, token: str, limit: int = 50) -> list[dict]:
     response = requests.get(
         f"{api_base_url}/documents/",
         params={"limit": limit},
+        headers=_auth_headers(token),
         timeout=LIST_TIMEOUT_SECONDS,
     )
     response.raise_for_status()
@@ -118,29 +151,32 @@ def _clear_knowledge_base_session() -> None:
 
 def fetch_qa_logs(
     api_base_url: str,
+    token: str,
     knowledge_base_id: str,
     limit: int = 100,
 ) -> list[dict]:
     response = requests.get(
         f"{api_base_url}/qa_logs/",
         params={"knowledge_base_id": knowledge_base_id, "limit": limit},
+        headers=_auth_headers(token),
         timeout=LIST_TIMEOUT_SECONDS,
     )
     response.raise_for_status()
     return response.json().get("qa_logs", [])
 
 
-def upload_pdf(api_base_url: str, uploaded_file) -> dict:
+def upload_pdf(api_base_url: str, uploaded_file, token: str) -> dict:
     response = requests.post(
-        f"{api_base_url}/upload_pdf/",
+        f"{api_base_url}/documents/upload",
         files={"file": (uploaded_file.name, uploaded_file.getvalue(), "application/pdf")},
+        headers=_auth_headers(token),
         timeout=UPLOAD_TIMEOUT_SECONDS,
     )
     response.raise_for_status()
     return response.json()
 
 
-def upload_pdfs(api_base_url: str, uploaded_files: list) -> dict:
+def upload_pdfs(api_base_url: str, uploaded_files: list, token: str) -> dict:
     multipart_files = [
         ("files", (uploaded_file.name, uploaded_file.getvalue(), "application/pdf"))
         for uploaded_file in uploaded_files
@@ -148,6 +184,7 @@ def upload_pdfs(api_base_url: str, uploaded_files: list) -> dict:
     response = requests.post(
         f"{api_base_url}/upload_pdfs/",
         files=multipart_files,
+        headers=_auth_headers(token),
         timeout=UPLOAD_TIMEOUT_SECONDS * max(len(uploaded_files), 1),
     )
     response.raise_for_status()
@@ -214,15 +251,17 @@ def ask_question(
     question: str,
     knowledge_base_id: str,
     history: list,
+    token: str,
 ) -> dict:
     response = requests.post(
-        f"{api_base_url}/ask/",
+        f"{api_base_url}/ask",
         json={
             "question": question,
             "knowledge_base_id": knowledge_base_id,
             "history": _history_for_request(history),
             "debug": True,
         },
+        headers=_auth_headers(token),
         timeout=ASK_TIMEOUT_SECONDS,
     )
     response.raise_for_status()
@@ -601,6 +640,88 @@ def _format_request_error(exc: requests.RequestException) -> str:
     return f"上传时发生网络错误：{exc}"
 
 
+def _format_auth_error(exc: Exception, action: str) -> str:
+    if isinstance(exc, requests.Timeout):
+        return f"{action}请求超时，请稍后重试。"
+    if isinstance(exc, requests.ConnectionError):
+        return "无法连接后端，请确认 API 地址正确且服务已启动。"
+    if isinstance(exc, requests.HTTPError):
+        response = exc.response
+        if response is not None:
+            try:
+                detail = response.json().get("detail", response.text)
+            except ValueError:
+                detail = response.text
+            return f"{action}失败（HTTP {response.status_code}）：{detail}"
+        return f"{action}失败：{exc}"
+    if isinstance(exc, ValueError):
+        return str(exc)
+    return f"{action}时发生错误：{exc}"
+
+
+def _clear_user_scoped_state() -> None:
+    _clear_knowledge_base_session()
+    for key in (
+        "sidebar_documents",
+        "active_kb_ids",
+        "qa_logs_cache",
+        "qa_logs_cache_key",
+        SIDEBAR_KB_SELECT_KEY,
+    ):
+        st.session_state.pop(key, None)
+
+
+def _render_auth_panel(api_base_url: str, reachable: bool) -> None:
+    st.subheader("用户登录")
+
+    if st.session_state.auth_token:
+        st.success(f"已登录：{st.session_state.auth_email}")
+        if st.button("退出登录", key="logout_button"):
+            st.session_state.auth_token = None
+            st.session_state.auth_email = None
+            st.session_state.auth_status = None
+            _clear_user_scoped_state()
+            st.rerun()
+        return
+
+    email = st.text_input(
+        "Email",
+        value=os.getenv("DEMO_EMAIL", "demo@example.com"),
+        key="auth_email_input",
+    )
+    password = st.text_input(
+        "Password",
+        type="password",
+        value=os.getenv("DEMO_PASSWORD", "password123"),
+        key="auth_password_input",
+    )
+    disabled = not reachable or not email or not password
+
+    col_login, col_register = st.columns(2)
+    with col_login:
+        login_clicked = st.button("登录", disabled=disabled, key="login_button")
+    with col_register:
+        register_clicked = st.button("注册并登录", disabled=disabled, key="register_login_button")
+
+    if login_clicked or register_clicked:
+        try:
+            if register_clicked:
+                try:
+                    register_user(api_base_url, email, password)
+                except requests.HTTPError as exc:
+                    if exc.response is None or exc.response.status_code != 409:
+                        raise
+            token = login_user(api_base_url, email, password)
+            st.session_state.auth_token = token
+            st.session_state.auth_email = email
+            st.session_state.auth_status = "logged_in"
+            _clear_user_scoped_state()
+            st.rerun()
+        except Exception as exc:
+            action = "注册或登录" if register_clicked else "登录"
+            st.error(_format_auth_error(exc, action))
+
+
 def _render_knowledge_base_status(active_kb_ids: set[str]) -> None:
     st.subheader("当前知识库状态")
 
@@ -609,18 +730,18 @@ def _render_knowledge_base_status(active_kb_ids: set[str]) -> None:
 
     if kb_id:
         if kb_active:
-            st.success("当前知识库已在后端内存中加载，可以问答。")
+            st.success("当前文档已入库，可通过 pgvector 检索；内存 FAISS fallback 也已加载。")
         else:
-            st.error(
-                "当前知识库仅有数据库记录，向量索引未加载（常见于后端重启后）。"
-                "请在侧边栏重新上传 PDF，或从「可用知识库」中选择。"
+            st.info(
+                "当前文档已保存在 PostgreSQL + pgvector，可继续问答。"
+                "内存 FAISS fallback 未加载，通常是后端重启后的正常状态。"
             )
 
         col1, col2 = st.columns(2)
         with col1:
             st.metric("文本块数量", st.session_state.chunks_count or 0)
         with col2:
-            display_status = "ready" if kb_active else "需重新上传"
+            display_status = "pgvector + FAISS" if kb_active else "pgvector"
             st.metric("问答状态", display_status)
 
         st.markdown(f"**knowledge_base_id:** `{kb_id}`")
@@ -628,15 +749,19 @@ def _render_knowledge_base_status(active_kb_ids: set[str]) -> None:
         st.markdown(f"**chunks_count:** `{st.session_state.chunks_count}`")
         st.markdown(
             f"**数据库 status:** `{st.session_state.upload_status or '-'}` "
-            f"（仅表示历史上传成功，不代表当前可问答）"
+            f"（表示文档、chunks 与 embeddings 已入库）"
         )
         if st.session_state.upload_message:
             st.markdown(f"**message:** {st.session_state.upload_message}")
     else:
-        st.info("尚未选择可用知识库。请在侧边栏上传 PDF 构建，或从「可用知识库」中选择。")
+        st.info("尚未选择文档。请在侧边栏上传 PDF 构建，或从文档列表中选择。")
 
 
-def _load_sidebar_catalog(api_base_url: str, force_refresh: bool) -> tuple[list[dict], set[str]]:
+def _load_sidebar_catalog(
+    api_base_url: str,
+    token: str,
+    force_refresh: bool,
+) -> tuple[list[dict], set[str]]:
     documents: list[dict] = st.session_state.get("sidebar_documents", [])
     active_kb_ids: set[str] = st.session_state.get("active_kb_ids", set())
 
@@ -645,7 +770,7 @@ def _load_sidebar_catalog(api_base_url: str, force_refresh: bool) -> tuple[list[
         or "sidebar_documents" not in st.session_state
         or "active_kb_ids" not in st.session_state
     ):
-        documents = fetch_documents(api_base_url)
+        documents = fetch_documents(api_base_url, token)
         active_kb_ids = fetch_active_knowledge_base_ids(api_base_url)
         st.session_state.sidebar_documents = documents
         st.session_state.active_kb_ids = active_kb_ids
@@ -653,25 +778,29 @@ def _load_sidebar_catalog(api_base_url: str, force_refresh: bool) -> tuple[list[
     return documents, active_kb_ids
 
 
-def _render_sidebar_documents(api_base_url: str, reachable: bool) -> set[str]:
+def _render_sidebar_documents(api_base_url: str, token: str | None, reachable: bool) -> set[str]:
     st.subheader("知识库选择")
 
     if not reachable:
         st.caption("后端不可访问，无法加载文档列表。")
         return set()
 
+    if not token:
+        st.info("请先登录，再加载当前用户的文档列表。")
+        return set()
+
     refresh_clicked = st.button("刷新列表", key="refresh_documents")
 
     try:
-        documents, active_kb_ids = _load_sidebar_catalog(api_base_url, refresh_clicked)
+        documents, active_kb_ids = _load_sidebar_catalog(api_base_url, token, refresh_clicked)
     except requests.RequestException as exc:
         st.error(_format_list_error(exc, "文档或知识库列表"))
         return st.session_state.get("active_kb_ids", set())
 
-    available_docs = [doc for doc in documents if doc["knowledge_base_id"] in active_kb_ids]
-    expired_docs = [doc for doc in documents if doc["knowledge_base_id"] not in active_kb_ids]
+    available_docs = documents
+    pgvector_only_docs = [doc for doc in documents if doc["knowledge_base_id"] not in active_kb_ids]
 
-    st.caption(f"后端内存中可用：{len(active_kb_ids)} 个 · 数据库记录：{len(documents)} 条")
+    st.caption(f"文档记录：{len(documents)} 条 · 内存 FAISS fallback 已加载：{len(active_kb_ids)} 个")
 
     if available_docs:
         current_kb = st.session_state.knowledge_base_id
@@ -679,27 +808,28 @@ def _render_sidebar_documents(api_base_url: str, reachable: bool) -> set[str]:
 
         def _format_available_option(index: int) -> str:
             if index == 0:
-                return "（未选择 — 请先选择或上传 PDF）"
+                return "（未选择 - 请先选择或上传 PDF）"
             doc = available_docs[index - 1]
+            marker = "pgvector + FAISS" if doc["knowledge_base_id"] in active_kb_ids else "pgvector"
             return (
-                f"🟢 {doc['filename']} · {doc['chunks_count']} 块 · "
+                f"{marker} · {doc['filename']} · {doc['chunks_count']} 块 · "
                 f"{doc['created_at'][:19]}"
             )
 
-        if _is_kb_active(current_kb, active_kb_ids):
+        if _find_kb_select_index(available_docs, current_kb) > 0:
             _sync_sidebar_kb_select(available_docs, current_kb)
         elif SIDEBAR_KB_SELECT_KEY not in st.session_state:
             st.session_state[SIDEBAR_KB_SELECT_KEY] = 0
 
         selected_index = st.selectbox(
-            "可用知识库",
+            "文档 / 知识库",
             option_indices,
             format_func=_format_available_option,
             key=SIDEBAR_KB_SELECT_KEY,
         )
 
         if selected_index == 0:
-            if _is_kb_active(st.session_state.knowledge_base_id, active_kb_ids):
+            if _find_kb_select_index(available_docs, st.session_state.knowledge_base_id) > 0:
                 _sync_sidebar_kb_select(available_docs, st.session_state.knowledge_base_id)
                 st.rerun()
         else:
@@ -710,16 +840,16 @@ def _render_sidebar_documents(api_base_url: str, reachable: bool) -> set[str]:
                 st.session_state.history = []
                 st.rerun()
     else:
-        st.warning("当前没有可问答的知识库。请上传 PDF 构建向量库。")
-        if _is_kb_active(st.session_state.knowledge_base_id, active_kb_ids):
+        st.warning("当前没有已入库文档。请上传 PDF 构建知识库。")
+        if st.session_state.knowledge_base_id:
             _clear_knowledge_base_session()
             st.rerun()
 
-    if expired_docs:
-        with st.expander(f"历史文档（{len(expired_docs)} 条，仅记录，需重新上传才可问答）"):
-            for doc in expired_docs:
+    if pgvector_only_docs:
+        with st.expander(f"pgvector 持久化文档（{len(pgvector_only_docs)} 条，内存 FAISS fallback 未加载）"):
+            for doc in pgvector_only_docs:
                 st.markdown(
-                    f"⚠️ **{doc['filename']}** · {doc['chunks_count']} 块 · "
+                    f"**{doc['filename']}** · {doc['chunks_count']} 块 · "
                     f"`{doc['knowledge_base_id'][:8]}...`"
                 )
                 st.caption(f"上传于 {doc['created_at'][:19]} · 数据库 status: {doc.get('status', '-')}")
@@ -736,17 +866,13 @@ def _render_chat_tab(api_base_url: str, active_kb_ids: set[str]) -> None:
     st.subheader("对话")
 
     kb_id = st.session_state.knowledge_base_id
-    kb_active = _is_kb_active(kb_id, active_kb_ids)
-    has_knowledge_base = kb_active
-    can_chat = kb_active and st.session_state.backend_reachable
+    auth_token = st.session_state.auth_token
+    can_chat = bool(kb_id) and st.session_state.backend_reachable and bool(auth_token)
 
-    if not kb_id:
-        st.warning("请先上传 PDF 并构建知识库，或从侧边栏「可用知识库」中选择后再提问。")
-    elif not kb_active:
-        st.warning(
-            "当前选中的知识库不可问答。这通常是后端重启后向量索引已清空。"
-            "请重新上传 PDF，或选择一个 🟢 可用知识库。"
-        )
+    if not auth_token:
+        st.warning("请先在侧边栏登录，再上传文档或提问。")
+    elif not kb_id:
+        st.warning("请先上传 PDF 并构建知识库，或从侧边栏文档列表中选择后再提问。")
 
     for turn in st.session_state.history:
         normalized = _normalize_turn(turn)
@@ -761,8 +887,10 @@ def _render_chat_tab(api_base_url: str, active_kb_ids: set[str]) -> None:
         "请输入你的问题...",
         disabled=not can_chat,
     ):
-        if not kb_active:
-            st.warning("当前知识库不可用，请重新上传 PDF 或选择可用知识库后再提问。")
+        if not auth_token:
+            st.warning("请先在侧边栏登录。")
+        elif not kb_id:
+            st.warning("请先上传 PDF 或选择一个文档后再提问。")
         elif not st.session_state.backend_reachable:
             st.error(st.session_state.backend_check_error or "后端不可访问，无法提问。")
         else:
@@ -773,6 +901,7 @@ def _render_chat_tab(api_base_url: str, active_kb_ids: set[str]) -> None:
                         prompt,
                         st.session_state.knowledge_base_id,
                         st.session_state.history,
+                        st.session_state.auth_token,
                     )
                     st.session_state.history = _merge_history_with_debug(
                         result.get("history", []),
@@ -784,8 +913,12 @@ def _render_chat_tab(api_base_url: str, active_kb_ids: set[str]) -> None:
                     st.error(_format_ask_error(exc))
 
 
-def _render_qa_history_tab(api_base_url: str) -> None:
+def _render_qa_history_tab(api_base_url: str, token: str | None) -> None:
     st.subheader("历史问答")
+
+    if not token:
+        st.info("请先登录，再查看当前用户的历史问答。")
+        return
 
     documents: list[dict] = st.session_state.get("sidebar_documents", [])
     if not documents:
@@ -810,7 +943,7 @@ def _render_qa_history_tab(api_base_url: str) -> None:
         key="history_kb_select",
     )
 
-    st.caption(f"知识库：`{selected_kb}`（历史记录来自 PostgreSQL，不要求当前可问答）")
+    st.caption(f"知识库：`{selected_kb}`（历史记录来自 PostgreSQL；检索主路径使用 pgvector）")
 
     col_refresh, col_limit = st.columns([1, 2])
     with col_refresh:
@@ -837,6 +970,7 @@ def _render_qa_history_tab(api_base_url: str) -> None:
             try:
                 qa_logs = fetch_qa_logs(
                     api_base_url,
+                    token,
                     selected_kb,
                     limit=int(log_limit),
                 )
@@ -894,10 +1028,10 @@ def _render_debug_help_tab() -> None:
         "\n".join(
             [
                 "GET  /documents/                          # 最近上传文档（PostgreSQL）",
-                "GET  /knowledge_bases                     # 当前可问答的知识库（内存）",
+                "GET  /knowledge_bases                     # 当前内存 FAISS fallback 状态",
                 "GET  /qa_logs/?knowledge_base_id=...      # 历史问答",
-                "POST /upload_pdf/                         # 上传 PDF",
-                "POST /ask/                                # Agent 问答（debug=true）",
+                "POST /documents/upload                    # 上传 PDF",
+                "POST /ask                                 # RAG + LangGraph Agent 问答（debug=true）",
                 "GET  /health (predictive-maintenance-mini)     # 设备健康预测服务",
                 "POST /predict (predictive-maintenance-mini)    # 传感器参数预测",
             ]
@@ -948,7 +1082,10 @@ with st.sidebar:
         st.error(error_message or "后端不可访问")
 
     st.divider()
-    active_kb_ids = _render_sidebar_documents(api_base_url, reachable)
+    _render_auth_panel(api_base_url, reachable)
+
+    st.divider()
+    active_kb_ids = _render_sidebar_documents(api_base_url, st.session_state.auth_token, reachable)
 
     st.divider()
     st.subheader("知识库构建")
@@ -961,34 +1098,36 @@ with st.sidebar:
     uploaded_files = _normalize_uploaded_files(uploaded_input)
 
     build_clicked = st.button(
-        "构建 / 更新向量库",
+        "构建 / 更新知识库",
         type="primary",
-        disabled=not uploaded_files or not reachable,
+        disabled=not uploaded_files or not reachable or not st.session_state.auth_token,
     )
 
     if build_clicked:
-        if not uploaded_files:
+        if not st.session_state.auth_token:
+            st.warning("请先登录，再上传 PDF。")
+        elif not uploaded_files:
             st.warning("请先选择 PDF 文件。")
         elif len(uploaded_files) == 1:
             with st.spinner("正在上传并构建向量库，请稍候..."):
                 try:
-                    result = upload_pdf(api_base_url, uploaded_files[0])
+                    result = upload_pdf(api_base_url, uploaded_files[0], st.session_state.auth_token)
                     _apply_single_upload_result(result)
-                    st.success("向量库构建成功，已自动设为当前知识库，可直接开始问答。")
+                    st.success("知识库构建成功，已自动设为当前文档，可直接开始问答。")
                     st.rerun()
                 except requests.RequestException as exc:
                     st.error(_format_request_error(exc))
         else:
             with st.spinner(f"正在批量上传 {len(uploaded_files)} 个 PDF，请稍候..."):
                 try:
-                    result = upload_pdfs(api_base_url, uploaded_files)
+                    result = upload_pdfs(api_base_url, uploaded_files, st.session_state.auth_token)
                     _apply_batch_upload_result(result)
                     uploaded_count = result.get("total_uploaded", 0)
                     failed_count = result.get("total_failed", 0)
                     if uploaded_count > 0:
                         st.success(
                             f"批量构建完成：成功 {uploaded_count} 个，失败 {failed_count} 个。"
-                            "请从上方「可用知识库」中选择要问答的文档。"
+                            "请从上方文档列表中选择要问答的文档。"
                         )
                     else:
                         st.error(f"批量构建失败：{failed_count} 个文件均未成功。")
@@ -1004,7 +1143,7 @@ with tab_chat:
     _render_chat_tab(api_base_url, active_kb_ids if reachable else set())
 
 with tab_history:
-    _render_qa_history_tab(api_base_url)
+    _render_qa_history_tab(api_base_url, st.session_state.auth_token)
 
 with tab_debug:
     _render_debug_help_tab()

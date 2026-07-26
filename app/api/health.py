@@ -19,16 +19,22 @@ async def health_check():
 @router.get("/", summary="API文档")
 async def root():
     return {
-        "message": "RAG PDF 智能问答系统 API",
+        "message": "Industrial Maintenance Agent Platform API",
         "docs_url": "/docs",
         "endpoints": {
-            "upload_single": "POST /upload_pdf/ - 上传单个PDF",
-            "upload_multiple": "POST /upload_pdfs/ - 批量上传多个PDF",
-            "ask": "POST /ask/ - Agent 问答主入口",
-            "ask_rag": "POST /ask_rag/ - 经典RAG回退入口",
-            "list_kbs": "GET /knowledge_bases - 查看所有知识库",
-            "list_documents": "GET /documents/ - 最近上传文档",
-            "list_qa_logs": "GET /qa_logs/?knowledge_base_id=... - 历史问答",
-            "delete_kb": "DELETE /knowledge_base/{id} - 删除指定知识库",
+            "auth_register": "POST /auth/register - 注册用户",
+            "auth_login": "POST /auth/login - 获取 Bearer token",
+            "upload_single": "POST /documents/upload - 上传单个 PDF 并构建知识库",
+            "upload_legacy": "POST /upload_pdf/ - 兼容旧上传路径",
+            "ask": "POST /ask 或 /chat - RAG + LangGraph Agent 问答入口",
+            "ask_stream": "POST /ask/stream - 通用问答 SSE 流式接口",
+            "agent_invoke": "POST /agent/invoke - 工业运维 Agent 调用",
+            "agent_stream": "POST /agent/stream - 工业运维 Agent SSE 流式接口",
+            "agent_confirm": "POST /agent/confirm - 高风险动作确认",
+            "feedback": "POST /feedback - 用户反馈",
+            "retrieve": "POST /documents/retrieve - 文档片段检索",
+            "list_documents": "GET /documents/ - 当前用户文档列表",
+            "list_qa_logs": "GET /qa_logs/?knowledge_base_id=... - 当前用户历史问答",
+            "list_kbs": "GET /knowledge_bases - 查看当前进程知识库",
         },
     }

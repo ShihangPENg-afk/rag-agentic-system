@@ -3,10 +3,10 @@
 检索工具本地测试（不依赖 FastAPI 路由）。
 
 用法:
-    python test_retrieval_tool.py <PDF 文件路径>
+    python scripts/manual/retrieval_tool_check.py <PDF 文件路径>
 
 示例:
-    python test_retrieval_tool.py ./data/sample.pdf
+    python scripts/manual/retrieval_tool_check.py ./data/sample.pdf
 """
 from __future__ import annotations
 
@@ -15,9 +15,9 @@ import sys
 from pathlib import Path
 
 # 保证从项目根目录运行时能正确 import app.*
-ROOT = Path(__file__).resolve().parent
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 from app.services.upload_service import create_knowledge_base_from_saved_pdf
 from app.tools.retrieval_tools import preview_chunks_tool, retrieve_chunks_tool
