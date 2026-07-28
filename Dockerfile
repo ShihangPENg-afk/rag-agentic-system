@@ -23,7 +23,8 @@ RUN if [ "$SKIP_SYSTEM_DEPS" != "true" ]; then \
 COPY requirements.txt .
 
 RUN if [ "$SKIP_PIP_INSTALL" != "true" ]; then \
-      pip install --upgrade pip && pip install -r requirements.txt; \
+      python -m pip install --upgrade --retries 10 --timeout 100 pip \
+      && python -m pip install --retries 10 --timeout 100 -r requirements.txt; \
     fi
 
 COPY . .

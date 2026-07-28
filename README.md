@@ -377,6 +377,18 @@ docker compose up postgres redis -d
 make run
 ```
 
+如果本机 `5432` 或 `6379` 已被占用，可以选择空闲端口启动依赖，并让本地 API 使用同一组连接地址：
+
+```bash
+POSTGRES_PORT=55440 REDIS_PORT=56390 docker compose up postgres redis -d
+
+export DATABASE_URL="postgresql+psycopg2://rag_agent_user:change-me@localhost:55440/rag_agent_db"
+export REDIS_URL="redis://localhost:56390/0"
+make run
+```
+
+其中 `DATABASE_URL` 的用户名、密码和库名应与 `.env` 中的 `POSTGRES_*` 配置保持一致。
+
 等价启动命令：
 
 ```bash
